@@ -7,7 +7,7 @@ import asyncio
 
 async def main():
     agent = Agent()
-    await agent.launch()
+    await agent.launch("https://amazon.com")
     await asyncio.sleep(10)
     await agent.terminate()
         
