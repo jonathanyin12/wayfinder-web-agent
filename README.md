@@ -9,8 +9,14 @@ pip install -r requirements.txt
 playwright install
 ```
 
+Create a `.env` file and add your OPENAI_API_KEY:
+
+```
+OPENAI_API_KEY=your_openai_api_key
+```
+
 ## Usage
 
 ```bash
-python main.py
+python3 main.py
 ```
