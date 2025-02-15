@@ -14,7 +14,7 @@ from .input import type, type_and_enter
 from .interaction import click_element, hover_element
 from .navigation import go_back, go_forward, go_to_url, refresh
 from .screenshot import take_element_screenshot, take_screenshot
-from .scroll import scroll_down, scroll_up
+from .scroll import get_scroll_percentage, scroll_down, scroll_up
 from .utils import get_base_url
 
 
@@ -40,6 +40,7 @@ class AgentBrowser:
             "refresh": refresh,
             "scroll_up": scroll_up,
             "scroll_down": scroll_down,
+            "get_scroll_percentage": get_scroll_percentage,
             "take_screenshot": take_screenshot,
             "take_element_screenshot": take_element_screenshot,
             "annotate_page": annotate_page,
@@ -50,13 +51,9 @@ class AgentBrowser:
         self, url: str = "https://google.com", headless: bool = False
     ) -> Tuple[BrowserContext, Page]:
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=headless, args=["--start-maximized"]
-        )
+        self.browser = await self.playwright.chromium.launch(headless=headless)
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        self.context = await self.browser.new_context(
-            no_viewport=True, user_agent=user_agent
-        )
+        self.context = await self.browser.new_context(user_agent=user_agent)
         self.page = await self.context.new_page()
         await self.go_to(url)
 
@@ -103,6 +100,11 @@ class AgentBrowser:
                 await refresh(self.page)
             case "END":
                 return
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception as e:
+            print(f"Error waiting for networkidle: {e}")
+            pass
 
     def get_site_name(self) -> str:
         base_url = get_base_url(self.page.url)
