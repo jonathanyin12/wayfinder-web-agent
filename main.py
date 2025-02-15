@@ -4,9 +4,9 @@ from agent import Agent
 
 
 async def main():
-    agent = Agent()
+    agent = Agent(objective="buy a macbook")
     await agent.launch("https://amazon.com")
-    await asyncio.sleep(10)
+    await asyncio.sleep(3)
     await agent.terminate()
 
 

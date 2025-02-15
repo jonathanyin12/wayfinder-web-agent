@@ -1,0 +1,123 @@
+from typing import Dict, Tuple
+
+from playwright.async_api import Page
+
+ANNOTATE_PAGE_TEMPLATE = """() => {
+    const elements = Array.from(document.querySelectorAll("a, button, input, textarea, select"));
+    let label_selectors = {};
+    let label_simplified_htmls = {};
+    function isHiddenByAncestors(element) {
+        while (element) {
+            const style = window.getComputedStyle(element);
+            if (style.display === 'none' || style.visibility === 'hidden') {
+                return true;
+            }
+            element = element.parentElement;
+        }
+        return false;
+    }
+
+    const getCssSelector = (element) => {
+        if (element === null) return "";
+        let path = [];
+        while (element && element.nodeType === Node.ELEMENT_NODE) {
+        let selector = element.nodeName.toLowerCase();
+        if (element.id) {
+            selector += "#" + element.id;
+            path.unshift(selector);
+            break;
+        } else {
+            let sib = element;
+            let nth = 1;
+            while ((sib = sib.previousElementSibling)) {
+            if (sib.nodeName.toLowerCase() == selector) nth++;
+            }
+            if (nth != 1) selector += ":nth-of-type(" + nth + ")";
+        }
+        path.unshift(selector);
+        element = element.parentNode;
+        }
+        return path.join(" > ");
+    };
+
+    elements.forEach((element, index) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const isVisible = element.offsetWidth > 0 && element.offsetHeight > 0 && style.visibility !== 'hidden' && style.opacity !== '0' && style.display !== 'none';
+
+        const inViewport = (
+            rect.top >= 0 &&
+            rect.left >= 0 &&
+            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+            rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+        );
+
+        if (inViewport && isVisible && !isHiddenByAncestors(element)) {
+            let selector = element.tagName.toLowerCase();
+            let simplified_html = '<' + element.tagName.toLowerCase();
+            for (const attr of ['aria-label', 'alt', 'placeholder', 'value']) {
+                if (element.hasAttribute(attr)) {
+                    let attrValue = element.getAttribute(attr);
+                    simplified_html += ` ${attr}="${attrValue}"`;
+                }
+            }
+            const textContent = element.textContent.replace(/\\\\n/g, ' ')
+            simplified_html = simplified_html + '>' + textContent + '</' + element.tagName.toLowerCase() + '>'                              
+            simplified_html = simplified_html.replace(/\\s+/g, ' ').trim();                                 
+            
+            const cssSelector = getCssSelector(element);
+            label_selectors[index] = cssSelector;
+            label_simplified_htmls[index] = simplified_html;
+            const rect = element.getBoundingClientRect();
+            const newElement = document.createElement('div');
+            newElement.className = 'autopilot-generated-rect';
+            newElement.style.border = '2px solid brown';
+            newElement.style.position = 'absolute';
+            newElement.style.top = `${rect.top}px`;
+            newElement.style.left = `${rect.left}px`;
+            newElement.style.width = `${rect.width}px`;
+            newElement.style.height = `${rect.height}px`;
+            newElement.style.zIndex = 10000;  // Ensure the new element is on top
+            newElement.style.pointerEvents = 'none';  // Make the new element unclickable so it doesn't interfere with interactions
+            document.body.appendChild(newElement);
+            const label = document.createElement("span");
+            label.className = "autopilot-generated-label";
+            label.textContent = index;
+            label.style.position = "absolute";
+            label.style.lineHeight = "16px";
+            label.style.padding = "1px";
+            label.style.top = (window.scrollY + rect.top) + "px";
+            label.style.left = (window.scrollX + rect.left) + "px"; 
+            label.style.color = "white";
+            label.style.fontWeight = "bold";
+            label.style.fontSize = "16px";
+            label.style.backgroundColor = "brown";
+            label.style.zIndex = 10000;
+            document.body.appendChild(label);
+        }
+    });
+    return [label_selectors, label_simplified_htmls];
+}"""
+
+
+CLEAR_PAGE_TEMPLATE = """() => {
+    const removeElementsByClass = (className) => {
+        const elements = Array.from(document.querySelectorAll(className));
+        elements.forEach((element, index) => {
+            element.remove();
+        });
+    };
+    removeElementsByClass(".autopilot-generated-rect");
+    removeElementsByClass(".autopilot-generated-label");
+}"""
+
+
+async def annotate_page(page: Page) -> Tuple[Dict[int, str], Dict[int, str]]:
+    label_selectors, label_simplified_htmls = await page.evaluate(
+        ANNOTATE_PAGE_TEMPLATE
+    )
+    return label_selectors, label_simplified_htmls
+
+
+async def clear_annotations(page: Page):
+    await page.evaluate(CLEAR_PAGE_TEMPLATE)

@@ -9,11 +9,13 @@ from playwright.async_api import (
     async_playwright,
 )
 
+from .annotation import annotate_page, clear_annotations
 from .input import type, type_and_enter
 from .interaction import click_element, hover_element
 from .navigation import go_back, go_forward, go_to_url, refresh
 from .screenshot import take_element_screenshot, take_screenshot
 from .scroll import scroll_down, scroll_up
+from .utils import get_base_url
 
 
 class AgentBrowser:
@@ -40,6 +42,8 @@ class AgentBrowser:
             "scroll_down": scroll_down,
             "take_screenshot": take_screenshot,
             "take_element_screenshot": take_element_screenshot,
+            "annotate_page": annotate_page,
+            "clear_annotations": clear_annotations,
         }
 
     async def launch(
@@ -78,3 +82,28 @@ class AgentBrowser:
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
+
+    async def execute_action(self, action: str, label_selector: str, text: str = ""):
+        match action:
+            case "CLICK":
+                await click_element(self.page, label_selector)
+            case "TYPE":
+                await type(self.page, label_selector, text)
+            case "TYPE_AND_SUBMIT":
+                await type_and_enter(self.page, label_selector, text)
+            case "SCROLL_DOWN":
+                await scroll_down(self.page)
+            case "SCROLL_UP":
+                await scroll_up(self.page)
+            case "GO_BACK":
+                await go_back(self.page)
+            case "GO_FORWARD":
+                await go_forward(self.page)
+            case "REFRESH":
+                await refresh(self.page)
+            case "END":
+                return
+
+    def get_site_name(self) -> str:
+        base_url = get_base_url(self.page.url)
+        return base_url.replace("www.", "")
