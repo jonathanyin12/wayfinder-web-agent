@@ -2,10 +2,11 @@ from typing import Dict, Tuple
 
 from playwright.async_api import Page
 
-ANNOTATE_PAGE_TEMPLATE = """() => {
+ANNOTATE_PAGE_TEMPLATE = r"""() => {
     const elements = Array.from(document.querySelectorAll("a, button, input, textarea, select"));
     let label_selectors = {};
     let label_simplified_htmls = {};
+
     function isHiddenByAncestors(element) {
         while (element) {
             const style = window.getComputedStyle(element);
@@ -21,38 +22,72 @@ ANNOTATE_PAGE_TEMPLATE = """() => {
         if (element === null) return "";
         let path = [];
         while (element && element.nodeType === Node.ELEMENT_NODE) {
-        let selector = element.nodeName.toLowerCase();
-        if (element.id) {
-            selector += "#" + element.id;
-            path.unshift(selector);
-            break;
-        } else {
-            let sib = element;
-            let nth = 1;
-            while ((sib = sib.previousElementSibling)) {
-            if (sib.nodeName.toLowerCase() == selector) nth++;
+            let selector = element.nodeName.toLowerCase();
+            if (element.id) {
+                selector += "#" + element.id;
+                path.unshift(selector);
+                break;
+            } else {
+                let sib = element;
+                let nth = 1;
+                while ((sib = sib.previousElementSibling)) {
+                    if (sib.nodeName.toLowerCase() == selector) nth++;
+                }
+                if (nth != 1) selector += ":nth-of-type(" + nth + ")";
             }
-            if (nth != 1) selector += ":nth-of-type(" + nth + ")";
-        }
-        path.unshift(selector);
-        element = element.parentNode;
+            path.unshift(selector);
+            element = element.parentNode;
         }
         return path.join(" > ");
     };
 
-    elements.forEach((element, index) => {
+    function isElementVisible(element) {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
-        const isVisible = element.offsetWidth > 0 && element.offsetHeight > 0 && style.visibility !== 'hidden' && style.opacity !== '0' && style.display !== 'none';
+        
+        // Basic size and style checks
+        if (element.offsetWidth <= 1 || element.offsetHeight <= 1 ||
+            style.visibility === 'hidden' || style.display === 'none' ||
+            parseFloat(style.opacity) === 0) {
+            return false;
+        }
 
-        const inViewport = (
+        // Check if element or its ancestors are hidden
+        if (isHiddenByAncestors(element)) {
+            return false;
+        }
+
+        // Check if element is actually clickable/interactive
+        if (style.pointerEvents === 'none') {
+            return false;
+        }
+
+        // Check if element is covered by other elements
+        const elementAtPoint = document.elementFromPoint(
+            rect.left + rect.width/2,
+            rect.top + rect.height/2
+        );
+        if (!elementAtPoint || !element.contains(elementAtPoint)) {
+            return false;
+        }
+
+        // Check if element has meaningful dimensions
+        if (rect.width * rect.height === 0) {
+            return false;
+        }
+
+        // Viewport visibility check
+        return (
             rect.top >= 0 &&
             rect.left >= 0 &&
             rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
             rect.right <= (window.innerWidth || document.documentElement.clientWidth)
         );
+    }
 
-        if (inViewport && isVisible && !isHiddenByAncestors(element)) {
+    let visibleIndex = 0;
+    elements.forEach((element) => {
+        if (isElementVisible(element)) {
             let selector = element.tagName.toLowerCase();
             let simplified_html = '<' + element.tagName.toLowerCase();
             for (const attr of ['aria-label', 'alt', 'placeholder', 'value']) {
@@ -61,39 +96,47 @@ ANNOTATE_PAGE_TEMPLATE = """() => {
                     simplified_html += ` ${attr}="${attrValue}"`;
                 }
             }
-            const textContent = element.textContent.replace(/\\\\n/g, ' ')
-            simplified_html = simplified_html + '>' + textContent + '</' + element.tagName.toLowerCase() + '>'                              
-            simplified_html = simplified_html.replace(/\\s+/g, ' ').trim();                                 
-            
+            // Replace newline characters in text content with spaces.
+            const textContent = element.textContent.replace(/\n/g, ' ');
+            simplified_html = simplified_html + '>' + textContent + '</' + element.tagName.toLowerCase() + '>';
+            simplified_html = simplified_html.replace(/\s+/g, ' ').trim();
+
             const cssSelector = getCssSelector(element);
-            label_selectors[index] = cssSelector;
-            label_simplified_htmls[index] = simplified_html;
-            const rect = element.getBoundingClientRect();
+            label_selectors[visibleIndex] = cssSelector;
+            label_simplified_htmls[visibleIndex] = simplified_html;
+
+            // Adjust positions with scroll offset
+            const adjustedTop = element.getBoundingClientRect().top + window.scrollY;
+            const adjustedLeft = element.getBoundingClientRect().left + window.scrollX;
+
             const newElement = document.createElement('div');
             newElement.className = 'autopilot-generated-rect';
             newElement.style.border = '2px solid brown';
             newElement.style.position = 'absolute';
-            newElement.style.top = `${rect.top}px`;
-            newElement.style.left = `${rect.left}px`;
-            newElement.style.width = `${rect.width}px`;
-            newElement.style.height = `${rect.height}px`;
-            newElement.style.zIndex = 10000;  // Ensure the new element is on top
-            newElement.style.pointerEvents = 'none';  // Make the new element unclickable so it doesn't interfere with interactions
+            newElement.style.top = `${adjustedTop}px`;
+            newElement.style.left = `${adjustedLeft}px`;
+            newElement.style.width = `${element.getBoundingClientRect().width}px`;
+            newElement.style.height = `${element.getBoundingClientRect().height}px`;
+            newElement.style.zIndex = 10000;
+            newElement.style.pointerEvents = 'none';
             document.body.appendChild(newElement);
+
             const label = document.createElement("span");
             label.className = "autopilot-generated-label";
-            label.textContent = index;
+            label.textContent = visibleIndex;
             label.style.position = "absolute";
             label.style.lineHeight = "16px";
             label.style.padding = "1px";
-            label.style.top = (window.scrollY + rect.top) + "px";
-            label.style.left = (window.scrollX + rect.left) + "px"; 
+            label.style.top = `${adjustedTop}px`;
+            label.style.left = `${adjustedLeft}px`;
             label.style.color = "white";
             label.style.fontWeight = "bold";
             label.style.fontSize = "16px";
             label.style.backgroundColor = "brown";
             label.style.zIndex = 10000;
             document.body.appendChild(label);
+
+            visibleIndex++;
         }
     });
     return [label_selectors, label_simplified_htmls];
