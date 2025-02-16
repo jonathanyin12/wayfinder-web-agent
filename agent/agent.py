@@ -1,5 +1,6 @@
 import json
-from typing import Any, Dict, Tuple
+import time
+from typing import Any, Dict, List, Tuple
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -16,7 +17,7 @@ class Agent:
         self.browser = AgentBrowser()
         self.objective = objective  # The objective of the agent (e.g. "buy a macbook")
         self.max_retries = 3
-        self.model = "gpt-4o"
+        self.model = "o1"
 
     async def launch(self, url: str = "https://google.com", headless: bool = False):
         await self.browser.launch(url, headless)
@@ -27,14 +28,17 @@ class Agent:
 
     async def _make_llm_call(self, messages: list, attempt: int = 0) -> Dict[str, Any]:
         """Helper method to make LLM API calls with retry logic"""
+        start_time = time.time()
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                temperature=0.0,
+                # temperature=0.0,
             )
-            return json.loads(response.choices[0].message.content)
+            result = json.loads(response.choices[0].message.content)
+            print(f"LLM call took {time.time() - start_time:.2f} seconds")
+            return result
         except Exception as e:
             if attempt >= self.max_retries - 1:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
@@ -43,51 +47,21 @@ class Agent:
 
     async def _observe_and_plan(self) -> Tuple[str, str]:
         """Observe the current state of the browser and plan the next action."""
+        await self.browser.annotate_page()
         screenshot_base64 = await self.browser.take_screenshot()
+        # print(json.dumps(self.browser.label_simplified_htmls, indent=4))
         messages = [
             {
                 "role": "system",
-                "content": f"You are a helpful assistant. Here is your objective: {self.objective}.",
+                "content": await self._get_system_prompt(),
             },
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "text",
-                        "text": self._get_observe_and_plan_prompt(),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{screenshot_base64}",
-                        },
-                    },
-                ],
-            },
-        ]
-
-        response_json = await self._make_llm_call(messages)
-        print(json.dumps(response_json, indent=4))
-        return response_json["observation"], response_json["reasoning"]
-
-    async def _execute_agent_action(self, reasoning: str) -> Tuple[str, str, str]:
-        """Execute the next action in the plan."""
-        label_selectors, label_simplified_htmls = await self.browser.annotate_page()
-        screenshot_base64 = await self.browser.take_screenshot()
-        await self.browser.clear_annotations()
-
-        messages = [
-            {
-                "role": "system",
-                "content": f"You are a helpful assistant. Here is your objective: {self.objective}.",
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": self._get_action_prompt(
-                            reasoning, label_simplified_htmls
+                        "text": await self._get_observe_and_plan_prompt(
+                            self.browser.label_simplified_htmls
                         ),
                     },
                     {
@@ -102,52 +76,33 @@ class Agent:
 
         response_json = await self._make_llm_call(messages)
         print(json.dumps(response_json, indent=4))
+        return response_json["action"], response_json["action_args"]
 
-        label = str(response_json["element_number"])
-        label_selector = label_selectors[label]
+    async def _execute_agent_action(
+        self, action: str, action_args: List[str]
+    ) -> Tuple[str, str, str]:
+        """Execute the next action in the plan."""
 
-        await self.browser.execute_action(
-            response_json["action_name"],
-            label_selector,
-            response_json["action_args"],
-        )
-        return label, response_json["action_name"], response_json["action_args"]
+        if len(action_args) > 0:
+            label_selector = self.browser.label_selectors[str(action_args[0])]
+            print(f"Label selector: {label_selector}")
+            text = action_args[1] if len(action_args) > 1 else ""
+        else:
+            label_selector = None
+            text = ""
 
-    def _get_observe_and_plan_prompt(self) -> str:
-        """Returns the prompt template for observation phase"""
-        return f"""You are currently on a specific page of {self.browser.get_site_name()}, which shown in the image.
+        await self.browser.clear_annotations()
+        await self.browser.execute_action(action, label_selector, text)
+        await self.browser.wait_for_page_load()
 
-Your end goal is to complete the following objective: {self.objective}.
+    async def _get_system_prompt(self) -> str:
+        """Returns the system prompt for the agent"""
+        return f"""You are a helpful web browsing assistant. Here is your ultimate objective: {self.objective}.
 
-TASKS:
-1. Decribe what you see in the screenshot. 
-2. Reason about what you should do next on the page to get closer to your objective.
-
-Output your response in a JSON object with the following fields:
-{{
-    "observation": <Task 1>,
-    "reasoning": <Task 2>,
-}}"""
-
-    def _get_action_prompt(self, reasoning: str, label_simplified_htmls: Dict) -> str:
-        """Returns the prompt template for action phase"""
-        return f"""Your end goal is to complete the following objective: {self.objective}.
-
-You are currently on a specific page of {self.browser.get_site_name()}, which shown in the image. The page is annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
-
-Here are the elements you can interact with shown in the image:
-{json.dumps(label_simplified_htmls, indent=4)}
-
-Here is the next action you planned to take to get closer to your objective: {reasoning}.
-
-TASKS:
-1. Output the label of the element you want to interact with according to your plan.
-2. Choose the appropriate action to take on the element based on your plan.
-
-Here are the following actions you can take on a page:
+POSSIBLE ACTIONS
 - CLICK: click a specific element on the page
-- TYPE: type text into a text input or textarea
-- TYPE_AND_SUBMIT: type text into a text input or textarea and press enter
+- TYPE: type text into a text box on the page
+- TYPE_AND_SUBMIT: type text into a text box on the page and press enter
 - SCROLL_DOWN: scroll down on the page
 - SCROLL_UP: scroll up on the page
 - GO_BACK: go back to the previous page
@@ -155,20 +110,54 @@ Here are the following actions you can take on a page:
 - REFRESH: refresh the page
 - END: declare that you have completed the task
 
-3. (Optional) Provide any additional arguments needed for the action. If you don't need to provide any additional arguments, set the "action_args" to an empty string.
 
-Output your response in a JSON object with the following fields:
+TASKS
+For every response, you must always complete the following tasks
+1. Summarize the current page in context of your objective.
+2. What is the next goal that would bring you closer to your objective?
+3. Is there currently a visible element on the page that you can interact with to get closer to your objective? If so, what is it? If not, would scrolling up or down help you get closer to your objective? Or should you go to a different page?
+4. Output the action you want to take
+5. Provide arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "action_args" to an empty list. When you are typing text, provide the text you want to type as the second argument.
+
+
+Respond with a JSON object with the following fields:
 {{
-    "element_number": <Task 1>,
-    "action_name": <Task 2>,
-    "action_args": <Task 3>,
-}}"""
+    "page_summary": <Task 1>,
+    "next_goal": <Task 2>,
+    "reasoning": <Task 3>,
+    "action": <Task 4>,
+    "action_args": <Task 5>,
+}}
+"""
+
+    async def _get_observe_and_plan_prompt(
+        self, label_simplified_htmls: Dict[str, str]
+    ) -> str:
+        """Returns the prompt template for observation phase"""
+        scroll_percentage = await self.browser.get_scroll_percentage()
+        if scroll_percentage is not None:
+            scroll_percentage_block = f"The page is currently scrolled {scroll_percentage}% from the top (0% = top, 100% = bottom)."
+        else:
+            scroll_percentage_block = ""
+        return f"""You are currently on a specific page of {self.browser.get_site_name()}, which shown in the image. {scroll_percentage_block}
+
+The page is annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
+
+
+Here are the visible elements you can interact with:
+{json.dumps(label_simplified_htmls, indent=4)}
+"""
 
     async def execute_agent_loop(self):
         """
         Make a plan, execute it, and then review the results.
         """
         while True:
-            observation, reasoning = await self._observe_and_plan()
-
-            await self._execute_agent_action(reasoning)
+            start_time = time.time()
+            action, action_args = await self._observe_and_plan()
+            print(
+                f"Observation and planning took {time.time() - start_time:.2f} seconds"
+            )
+            start_time = time.time()
+            await self._execute_agent_action(action, action_args)
+            print(f"Execution took {time.time() - start_time:.2f} seconds")
