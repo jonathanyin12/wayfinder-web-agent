@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from playwright.async_api import Page
 
@@ -88,17 +88,46 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
     let visibleIndex = 0;
     elements.forEach((element) => {
         if (isElementVisible(element)) {
-            let selector = element.tagName.toLowerCase();
-            let simplified_html = '<' + element.tagName.toLowerCase();
+            const tagName = element.tagName.toLowerCase();
+            let simplified_html = '<' + tagName;
             for (const attr of ['aria-label', 'alt', 'placeholder', 'value']) {
                 if (element.hasAttribute(attr)) {
                     let attrValue = element.getAttribute(attr);
                     simplified_html += ` ${attr}="${attrValue}"`;
                 }
             }
-            // Replace newline characters in text content with spaces.
-            const textContent = element.textContent.replace(/\n/g, ' ');
-            simplified_html = simplified_html + '>' + textContent + '</' + element.tagName.toLowerCase() + '>';
+
+            // Get inner text from the element.
+            let innerText = element.textContent.replace(/\n/g, ' ').trim();
+
+            // For input elements, we need to look elsewhere for the visible label text.
+            if (tagName === 'input' && innerText === '') {
+                // 1. Try to get an associated label via the "for" attribute.
+                if (element.id) {
+                    const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+                    if (associatedLabel) {
+                        innerText = associatedLabel.textContent.replace(/\n/g, ' ').trim();
+                    }
+                }
+                // 2. Check if the input is wrapped in a <label>.
+                if (innerText === '' && element.parentElement && element.parentElement.tagName.toLowerCase() === 'label') {
+                    innerText = element.parentElement.textContent.replace(/\n/g, ' ').trim();
+                }
+                // 3. Check if a sibling <span> element holds the text.
+                if (innerText === '') {
+                    if (element.nextElementSibling && element.nextElementSibling.tagName.toLowerCase() === 'span') {
+                        innerText = element.nextElementSibling.textContent.replace(/\n/g, ' ').trim();
+                    } else if (element.previousElementSibling && element.previousElementSibling.tagName.toLowerCase() === 'span') {
+                        innerText = element.previousElementSibling.textContent.replace(/\n/g, ' ').trim();
+                    }
+                }
+                // 4. Fallback to the "value" or "placeholder" attribute.
+                if (innerText === '') {
+                    innerText = element.getAttribute('value') || element.getAttribute('placeholder') || '';
+                }
+            }
+
+            simplified_html = simplified_html + '>' + innerText + '</' + tagName + '>';
             simplified_html = simplified_html.replace(/\s+/g, ' ').trim();
 
             const cssSelector = getCssSelector(element);
