@@ -18,6 +18,8 @@ class Agent:
         self.objective = objective  # The objective of the agent (e.g. "buy a macbook")
         self.max_retries = 3
         self.model = "o1"
+        # Persistent conversation history that will grow over time.
+        self.message_history: List[Dict[str, Any]] = []
 
     async def launch(self, url: str = "https://google.com", headless: bool = False):
         await self.browser.launch(url, headless)
@@ -49,32 +51,45 @@ class Agent:
         """Observe the current state of the browser and plan the next action."""
         await self.browser.annotate_page()
         screenshot_base64 = await self.browser.take_screenshot()
-        # print(json.dumps(self.browser.label_simplified_htmls, indent=4))
-        messages = [
-            {
+
+        # Append the system prompt only at the beginning.
+        if not self.message_history:
+            system_message = {
                 "role": "system",
                 "content": await self._get_system_prompt(),
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": await self._get_observe_and_plan_prompt(
-                            self.browser.label_simplified_htmls
-                        ),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{screenshot_base64}",
-                        },
-                    },
-                ],
-            },
-        ]
+            }
+            self.message_history.append(system_message)
 
-        response_json = await self._make_llm_call(messages)
+        # Prepare and append the user message.
+        user_message = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": await self._get_observe_and_plan_prompt(
+                        self.browser.label_simplified_htmls
+                    ),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{screenshot_base64}",
+                        "detail": "low",  # Cost saving measure for now
+                    },
+                },
+            ],
+        }
+
+        # Make the LLM call with the complete conversation history.
+        response_json = await self._make_llm_call(self.message_history + [user_message])
+
+        # Need to change this since images are repeatedly being added to the history.
+        self.message_history.append(user_message)
+
+        # Append the assistant's response to the history.
+        self.message_history.append(
+            {"role": "assistant", "content": json.dumps(response_json)}
+        )
         print(json.dumps(response_json, indent=4))
         return response_json["action"], response_json["action_args"]
 
@@ -82,7 +97,6 @@ class Agent:
         self, action: str, action_args: List[str]
     ) -> Tuple[str, str, str]:
         """Execute the next action in the plan."""
-
         if len(action_args) > 0:
             label_selector = self.browser.label_selectors[str(action_args[0])]
             print(f"Label selector: {label_selector}")
