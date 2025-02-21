@@ -115,8 +115,8 @@ class Agent:
 
 POSSIBLE ACTIONS
 - CLICK: click a specific element on the page
-- TYPE: type text into a text box on the page
-- TYPE_AND_SUBMIT: type text into a text box on the page and press enter
+- TYPE: type text into a text box on the page (only use this if you need to fill out an input box without immediately triggering a form submission)
+- TYPE_AND_SUBMIT: type text into a text box on the page and submit (e.g. search bar). Use this when the input field is designed to immediately perform an action upon receiving text.
 - SCROLL_DOWN: scroll down on the page
 - SCROLL_UP: scroll up on the page
 - GO_BACK: go back to the previous page
