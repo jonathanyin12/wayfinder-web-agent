@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 from playwright.async_api import Page
 
@@ -24,7 +24,7 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         while (element && element.nodeType === Node.ELEMENT_NODE) {
             let selector = element.nodeName.toLowerCase();
             if (element.id) {
-                selector += "#" + element.id;
+                selector += "#" + CSS.escape(element.id);
                 path.unshift(selector);
                 break;
             } else {
