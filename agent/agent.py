@@ -33,6 +33,7 @@ class Agent:
         self.message_history: List[Dict[str, Any]] = []
 
         # Browser Setup
+        self.human_control = False
         self.browser = AgentBrowser()
 
     @contextlib.asynccontextmanager
@@ -53,8 +54,20 @@ class Agent:
     async def execute_agent_loop(self):
         """Main agent loop: observe, plan, and execute actions."""
         while True:
-            async with self._timed_operation("Observation and planning"):
-                action, action_args = await self._plan_next_action()
+            if self.human_control:
+                await self._wait_for_human_input()
+
+            async with self._timed_operation("Observation"):
+                page_description = await self._observe_page()
+
+            captcha_detected = await self._detect_captcha(page_description)
+            if captcha_detected:
+                print("Captcha detected. Yielding control to human.")
+                await self._yield_control_to_human()
+                continue
+
+            async with self._timed_operation("Planning"):
+                action, action_args = await self._plan_next_action(page_description)
 
             async with self._timed_operation("Execution"):
                 await self._execute_action(action, action_args)
@@ -94,10 +107,34 @@ class Agent:
             }
         )
 
-    async def _plan_next_action(self) -> Tuple[str, str]:
+    # Main Methods
+    async def _observe_page(self) -> str:
+        """Describe the current page for non-vision models to understand."""
+        await self.browser.annotate_page()
+        screenshot_base64 = await self.browser.take_screenshot()
+
+        user_message = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": await self._get_page_description_prompt(),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{screenshot_base64}",
+                    },
+                },
+            ],
+        }
+        page_description_json = await self._make_llm_call(
+            self.message_history + [user_message], self.vision_model
+        )
+        return json.dumps(page_description_json, indent=4)
+
+    async def _plan_next_action(self, page_description: str) -> Tuple[str, str]:
         """Observe the current state and plan the next action."""
-        page_description = json.dumps(await self._get_page_description(), indent=4)
-        print(page_description)
 
         if not self.message_history:
             self._append_to_history("system", await self._get_system_prompt())
@@ -125,16 +162,15 @@ class Agent:
         if not action_args:
             return ActionConfig(action=action)
 
+        # Get the selector and use it directly
         label_selector = self.browser.label_selectors[str(action_args[0])]
+
         text = action_args[1] if len(action_args) > 1 else ""
         return ActionConfig(action=action, label_selector=label_selector, text=text)
 
     async def _execute_action(self, action: str, action_args: List[str]) -> None:
         """Execute the next action in the plan."""
         config = self._parse_action_config(action, action_args)
-
-        if config.label_selector:
-            print(f"Label selector: {config.label_selector}")
 
         await self.browser.clear_annotations()
         try:
@@ -146,31 +182,6 @@ class Agent:
             print(f"Error executing action: {e}\nTrying again next iteration...")
             # Remove last two messages from history on failure
             self.message_history = self.message_history[:-2]
-
-    # Browser Interaction Methods
-    async def _get_page_description(self) -> str:
-        """Describe the current page for non-vision models to understand."""
-        await self.browser.annotate_page()
-        screenshot_base64 = await self.browser.take_screenshot()
-
-        user_message = {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": await self._get_page_description_prompt(),
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{screenshot_base64}",
-                    },
-                },
-            ],
-        }
-        return await self._make_llm_call(
-            self.message_history + [user_message], self.vision_model
-        )
 
     # Prompts
     async def _get_system_prompt(self) -> str:
@@ -245,3 +256,23 @@ Here is a description of the page:
 Here are the visible elements you can interact with:
 {json.dumps(label_simplified_htmls, indent=4)}
 """
+
+    # Human Control Methods
+    async def _yield_control_to_human(self):
+        """Yield control back to human"""
+        self.human_control = True
+
+    async def _wait_for_human_input(self):
+        """Wait for human to press Enter to yield control back to agent"""
+        while True:
+            user_input = input(
+                "Press 'Enter' when you want to yield control back to the agent."
+            )
+            if user_input == "":  # Empty string means Enter was pressed
+                self.human_control = False
+                break
+            print("Please press 'Enter' key only.")
+
+    async def _detect_captcha(self, page_description: str) -> bool:
+        """Detect if a captcha is present on the page by simply checking if the description of the page contains the word 'captcha'"""
+        return "captcha" in page_description.lower()
