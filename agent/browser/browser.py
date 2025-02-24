@@ -9,10 +9,12 @@ from playwright.async_api import (
     async_playwright,
 )
 
+from ..models import AgentAction
 from .annotation import (
     ANNOTATE_PAGE_TEMPLATE,
     clear_annotations,
 )
+from .extract import extract_page_information
 from .input import type, type_and_enter
 from .interaction import click_element, hover_element
 from .navigation import go_back, go_forward, go_to_url, refresh
@@ -43,6 +45,7 @@ class AgentBrowser:
             "type_and_enter": type_and_enter,
             "click": click_element,
             "hover": hover_element,
+            "extract": extract_page_information,
             "go_to": go_to_url,
             "go_back": go_back,
             "go_forward": go_forward,
@@ -99,17 +102,25 @@ class AgentBrowser:
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
 
-    async def execute_action(self, action: str, label_selector: str, text: str = ""):
+    async def execute_action(self, action: AgentAction):
         # Save the previous page URL before executing the action in case the page changes
         self.previous_page_url = self.page.url
 
-        match action:
+        match action.name:
             case "CLICK":
+                label_selector = self.label_selectors[str(action.args[0])]
                 await click_element(self.page, label_selector)
             case "TYPE":
+                label_selector = self.label_selectors[str(action.args[0])]
+                text = action.args[1]
                 await type(self.page, label_selector, text)
             case "TYPE_AND_SUBMIT":
+                label_selector = self.label_selectors[str(action.args[0])]
+                text = action.args[1]
                 await type_and_enter(self.page, label_selector, text)
+            case "EXTRACT":
+                objective = action.args[0]
+                await extract_page_information(self.page, objective)
             case "SCROLL_DOWN":
                 await scroll_down(self.page)
             case "SCROLL_UP":

@@ -8,15 +8,9 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from .browser import AgentBrowser
+from .models import AgentAction
 
 load_dotenv()
-
-
-@dataclass
-class ActionConfig:
-    action: str
-    label_selector: Optional[str] = None
-    text: str = ""
 
 
 class Agent:
@@ -66,10 +60,10 @@ class Agent:
                 await self._wait_for_human_input()
                 continue
 
-            action = response_json["action"]
+            action = AgentAction(**response_json["action"])
             self.action_history.append(action)
 
-            if action["action_name"] == "END":
+            if action.name == "END":
                 print("Completed task. Exiting...")
                 break
 
@@ -155,7 +149,9 @@ class Agent:
         )
 
         if len(self.action_history) > 0:
-            dummy_user_message = f"Performed the following action: {self.action_history[-1]['action_description']}"
+            dummy_user_message = (
+                f"Performed the following action: {self.action_history[-1].description}"
+            )
             self._append_to_history("user", dummy_user_message)
 
         self._append_to_history("assistant", response)
@@ -164,28 +160,12 @@ class Agent:
         print(json.dumps(response_json, indent=4))
         return response_json
 
-    def _parse_action_config(self, action: Dict[str, Any]) -> ActionConfig:
-        """Parse action and arguments into a config object"""
-        if not action["action_args"]:
-            return ActionConfig(action=action["action_name"])
-
-        # Get the selector and use it directly
-        label_selector = self.browser.label_selectors[str(action["action_args"][0])]
-
-        text = action["action_args"][1] if len(action["action_args"]) > 1 else ""
-        return ActionConfig(
-            action=action["action_name"], label_selector=label_selector, text=text
-        )
-
-    async def _execute_action(self, action: Dict[str, Any]) -> None:
+    async def _execute_action(self, action: AgentAction) -> None:
         """Execute the next action in the plan."""
-        config = self._parse_action_config(action)
-
         await self.browser.clear_annotations()
+
         try:
-            await self.browser.execute_action(
-                config.action, config.label_selector, config.text
-            )
+            await self.browser.execute_action(action)
             await self.browser.wait_for_page_load()
         except Exception as e:
             print(f"Error executing action: {e}\nTrying again next iteration...")
@@ -203,6 +183,7 @@ POSSIBLE ACTIONS
 - CLICK: click a specific element on the page
 - TYPE: type text into a text box on the page (only use this if you need to fill out an input box without immediately triggering a form submission)
 - TYPE_AND_SUBMIT: type text into a text box on the page and submit (e.g. search bar). Use this when the input field is designed to immediately perform an action upon receiving text.
+- EXTRACT: extract information from the page. Only argument should be what the information you want to retrieve from the page.
 - SCROLL_DOWN: scroll down on the page.
 - SCROLL_UP: scroll up on the page
 - GO_BACK: go back to the previous page
@@ -221,9 +202,9 @@ TASK: Respond with a JSON object with the following fields:
         "next_goal": "What needs to be done with the next actions"
     }},
     "action" : {{
-        "action_description": "Very short description of the action you want to take.",
-        "action_name": "Action name from the POSSIBLE ACTIONS section.",
-        "action_args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "action_args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
+        "description": "Very short description of the action you want to take.",
+        "name": "Action name from the POSSIBLE ACTIONS section.",
+        "args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
     }}
 }}
 
