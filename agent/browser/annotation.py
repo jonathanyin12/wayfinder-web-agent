@@ -209,7 +209,7 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             const adjustedLeft = rect.left + window.scrollX;
 
             const newElement = document.createElement('div');
-            newElement.className = 'autopilot-generated-rect';
+            newElement.className = 'GWA-rect';
             newElement.style.border = '2px solid brown';
             newElement.style.position = 'absolute';
             newElement.style.top = `${adjustedTop}px`;
@@ -221,7 +221,7 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             document.body.appendChild(newElement);
 
             const label = document.createElement("span");
-            label.className = "autopilot-generated-label";
+            label.className = "GWA-label";
             label.textContent = visibleIndex;
             label.style.position = "absolute";
             label.style.lineHeight = "16px";
@@ -249,8 +249,8 @@ CLEAR_PAGE_TEMPLATE = """() => {
             element.remove();
         });
     };
-    removeElementsByClass(".autopilot-generated-rect");
-    removeElementsByClass(".autopilot-generated-label");
+    removeElementsByClass(".GWA-rect");
+    removeElementsByClass(".GWA-label");
 }"""
 
 
