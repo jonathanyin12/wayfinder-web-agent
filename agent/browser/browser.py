@@ -102,7 +102,6 @@ class AgentBrowser:
     async def execute_action(self, action: str, label_selector: str, text: str = ""):
         # Save the previous page URL before executing the action in case the page changes
         self.previous_page_url = self.page.url
-        self.previous_page_screenshot_base64 = await self.take_screenshot()
 
         match action:
             case "CLICK":
