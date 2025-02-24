@@ -45,12 +45,6 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         
-        // Basic size and style checks
-        if (element.offsetWidth <= 1 || element.offsetHeight <= 1 ||
-            style.visibility === 'hidden' || style.display === 'none') {
-            return false;
-        }
-
         // Check if element or its ancestors are hidden
         if (isHiddenByAncestors(element)) {
             return false;
@@ -58,6 +52,18 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
 
         // Check if element is actually clickable/interactive
         if (style.pointerEvents === 'none') {
+            return false;
+        }
+
+        // Special handling for small form elements
+        const isSmallFormElement = element.tagName.toLowerCase() === 'input' && 
+            (element.type === 'radio' || element.type === 'checkbox') &&
+            element.offsetWidth <= 1 && element.offsetHeight <= 1;
+
+        // Basic size and style checks (skip for small form elements)
+        if (!isSmallFormElement && (
+            element.offsetWidth <= 1 || element.offsetHeight <= 1 ||
+            style.visibility === 'hidden' || style.display === 'none')) {
             return false;
         }
 
@@ -107,6 +113,41 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         );
     }
 
+    function getParentWithLabel(element) {
+        // If input has an associated label via 'for' attribute
+        if (element.id) {
+            const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+            if (associatedLabel) {
+                // Find common parent of input and label
+                let inputParent = element.parentElement;
+                while (inputParent) {
+                    if (inputParent.contains(associatedLabel)) {
+                        return inputParent;
+                    }
+                    inputParent = inputParent.parentElement;
+                }
+            }
+        }
+        
+        // If input is wrapped in a label
+        let parent = element.parentElement;
+        while (parent) {
+            if (parent.tagName.toLowerCase() === 'label') {
+                return parent;
+            }
+            // Check if parent contains a label for this input
+            const childLabels = parent.getElementsByTagName('label');
+            for (const label of childLabels) {
+                if (label.getAttribute('for') === element.id || label.contains(element)) {
+                    return parent;
+                }
+            }
+            parent = parent.parentElement;
+        }
+        
+        return element; // fallback to the element itself
+    }
+
     let visibleIndex = 0;
     elements.forEach((element) => {
         if (isElementVisible(element)) {
@@ -152,13 +193,20 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             simplified_html = simplified_html + '>' + innerText + '</' + tagName + '>';
             simplified_html = simplified_html.replace(/\s+/g, ' ').trim();
 
+            // Keep the original selector pointing to the input element
             const cssSelector = getCssSelector(element);
             label_selectors[visibleIndex] = cssSelector;
             label_simplified_htmls[visibleIndex] = simplified_html;
 
-            // Adjust positions with scroll offset
-            const adjustedTop = element.getBoundingClientRect().top + window.scrollY;
-            const adjustedLeft = element.getBoundingClientRect().left + window.scrollX;
+            // Only use parent for visual display
+            const targetElement = element.tagName.toLowerCase() === 'input' &&
+                (element.type === 'radio' || element.type === 'checkbox') ?
+                getParentWithLabel(element) : element;
+
+            // Draw rectangle using parent dimensions
+            const rect = targetElement.getBoundingClientRect();
+            const adjustedTop = rect.top + window.scrollY;
+            const adjustedLeft = rect.left + window.scrollX;
 
             const newElement = document.createElement('div');
             newElement.className = 'autopilot-generated-rect';
@@ -166,8 +214,8 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             newElement.style.position = 'absolute';
             newElement.style.top = `${adjustedTop}px`;
             newElement.style.left = `${adjustedLeft}px`;
-            newElement.style.width = `${element.getBoundingClientRect().width}px`;
-            newElement.style.height = `${element.getBoundingClientRect().height}px`;
+            newElement.style.width = `${rect.width}px`;
+            newElement.style.height = `${rect.height}px`;
             newElement.style.zIndex = 10000;
             newElement.style.pointerEvents = 'none';
             document.body.appendChild(newElement);
