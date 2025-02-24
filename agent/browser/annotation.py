@@ -47,8 +47,7 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         
         // Basic size and style checks
         if (element.offsetWidth <= 1 || element.offsetHeight <= 1 ||
-            style.visibility === 'hidden' || style.display === 'none' ||
-            parseFloat(style.opacity) === 0) {
+            style.visibility === 'hidden' || style.display === 'none') {
             return false;
         }
 
@@ -67,7 +66,30 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             rect.left + rect.width/2,
             rect.top + rect.height/2
         );
-        if (!elementAtPoint || !element.contains(elementAtPoint)) {
+        
+        // For form elements, check if clicking their label or container would trigger them
+        if (element.tagName.toLowerCase() === 'input' && 
+            (element.type === 'radio' || element.type === 'checkbox')) {
+            // Consider the element visible if we hit its label or a parent with click handler
+            let currentElement = elementAtPoint;
+            while (currentElement) {
+                if (currentElement.tagName.toLowerCase() === 'label' && 
+                    currentElement.getAttribute('for') === element.id) {
+                    return true;
+                }
+                // Check if this is an ancestor that would handle the click
+                if (currentElement.contains(element)) {
+                    return true;
+                }
+                currentElement = currentElement.parentElement;
+            }
+        }
+        
+        // General visibility check for other elements
+        if (!elementAtPoint || 
+            (elementAtPoint !== element && 
+             !element.contains(elementAtPoint) && 
+             !elementAtPoint.contains(element))) {
             return false;
         }
 
