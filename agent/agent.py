@@ -68,6 +68,11 @@ class Agent:
 
             action = response_json["action"]
             self.action_history.append(action)
+
+            if action["action_name"] == "END":
+                print("Completed task. Exiting...")
+                break
+
             async with self._timed_operation("Execution"):
                 await self._execute_action(action)
 
@@ -81,7 +86,6 @@ class Agent:
         """Helper method to make LLM API calls with retry logic"""
         async with self._timed_operation(f"{model} call"):
             try:
-                self._print_message_history(messages)
                 response = await self.client.chat.completions.create(
                     model=model,
                     messages=messages,
@@ -110,8 +114,10 @@ class Agent:
     # Main Methods
     async def _observe_and_plan_next_action(self) -> Tuple[str, str]:
         """Observe the page and plan the next action"""
-        await self.browser.annotate_page()
         screenshot_base64 = await self.browser.take_screenshot()
+
+        await self.browser.annotate_page()
+        annotated_screenshot_base64 = await self.browser.take_screenshot()
 
         if not self.message_history:
             self._append_to_history("system", await self._get_system_prompt())
@@ -131,6 +137,14 @@ class Agent:
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/png;base64,{screenshot_base64}",
+                        "detail": "low",
+                    },
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{annotated_screenshot_base64}",
+                        "detail": "high",
                     },
                 },
             ],
@@ -247,7 +261,9 @@ TIPS:
 
 The exact url is {self.browser.page.url}.
 
-The screenshot of the page is annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
+The first screenshot is the original page. 
+
+The second screenshot is the page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
 
 
 Here are the visible elements you can interact with:
