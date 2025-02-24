@@ -17,7 +17,11 @@ from .input import type, type_and_enter
 from .interaction import click_element, hover_element
 from .navigation import go_back, go_forward, go_to_url, refresh
 from .screenshot import take_element_screenshot, take_screenshot
-from .scroll import get_scroll_percentage, scroll_down, scroll_up
+from .scroll import (
+    get_pixels_above_below,
+    scroll_down,
+    scroll_up,
+)
 from .utils import get_base_url
 
 
@@ -27,6 +31,8 @@ class AgentBrowser:
         self.browser: Browser = None
         self.context: BrowserContext = None
         self.page: Page = None
+        self.previous_page_url: str = ""
+        self.previous_page_screenshot_base64: str = ""
 
         self.screenshot_index = 0
         self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
@@ -43,7 +49,7 @@ class AgentBrowser:
             "refresh": refresh,
             "scroll_up": scroll_up,
             "scroll_down": scroll_down,
-            "get_scroll_percentage": get_scroll_percentage,
+            "get_pixels_above_below": get_pixels_above_below,
             "take_screenshot": take_screenshot,
             "take_element_screenshot": take_element_screenshot,
             "clear_annotations": clear_annotations,
@@ -82,7 +88,10 @@ class AgentBrowser:
                 if name in ["take_screenshot", "take_element_screenshot"]:
                     save_path = f"{self.screenshot_folder}/screenshot_{self.screenshot_index}.png"
                     self.screenshot_index += 1
-                    return await method(self.page, *args, save_path=save_path, **kwargs)
+                    base64_screenshot = await method(
+                        self.page, *args, save_path=save_path, **kwargs
+                    )
+                    return base64_screenshot
                 return await method(self.page, *args, **kwargs)
 
             return wrapper
@@ -91,6 +100,10 @@ class AgentBrowser:
         )
 
     async def execute_action(self, action: str, label_selector: str, text: str = ""):
+        # Save the previous page URL before executing the action in case the page changes
+        self.previous_page_url = self.page.url
+        self.previous_page_screenshot_base64 = await self.take_screenshot()
+
         match action:
             case "CLICK":
                 await click_element(self.page, label_selector)
@@ -126,3 +139,7 @@ class AgentBrowser:
         except Exception as e:
             print(f"Error waiting for networkidle: {e}")
             pass
+
+    def is_new_page(self) -> bool:
+        """Check if the current page is different from the last page"""
+        return self.previous_page_url != self.page.url

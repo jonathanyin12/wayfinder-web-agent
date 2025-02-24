@@ -1,3 +1,5 @@
+from typing import Tuple
+
 from playwright.async_api import Page
 
 
@@ -13,15 +15,21 @@ async def scroll_up(page: Page):
     )
 
 
-async def get_scroll_percentage(page: Page) -> int | None:
-    scroll_percentage = await page.evaluate(
+async def get_pixels_above_below(page: Page) -> Tuple[int, int]:
+    pixels_above = await page.evaluate(
+        """() => {
+            const h = document.documentElement;
+            const scrollTop = h.scrollTop || document.body.scrollTop;
+            return scrollTop;
+        }"""
+    )
+    pixels_below = await page.evaluate(
         """() => {
             const h = document.documentElement;
             const scrollTop = h.scrollTop || document.body.scrollTop;
             const scrollHeight = h.scrollHeight || document.body.scrollHeight;
             const clientHeight = h.clientHeight;
-            const total = scrollHeight - clientHeight;
-            return total > 0 ? (scrollTop / total) * 100 : 0;
+            return Math.max(0, scrollHeight - clientHeight - scrollTop);
         }"""
     )
-    return int(scroll_percentage) if not float("nan") else None
+    return pixels_above, pixels_below

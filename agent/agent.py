@@ -32,6 +32,9 @@ class Agent:
         self.objective = objective  # The objective of the agent (e.g. "buy a macbook")
         self.message_history: List[Dict[str, Any]] = []
 
+        self.observation_history: List[Dict[str, Any]] = []
+        self.planning_history: List[Dict[str, Any]] = []
+
         # Browser Setup
         self.human_control = False
         self.browser = AgentBrowser()
@@ -59,7 +62,6 @@ class Agent:
 
             async with self._timed_operation("Observation"):
                 page_description = await self._observe_page()
-
             captcha_detected = await self._detect_captcha(page_description)
             if captcha_detected:
                 print("Captcha detected. Yielding control to human.")
@@ -110,34 +112,55 @@ class Agent:
     # Main Methods
     async def _observe_page(self) -> str:
         """Describe the current page for non-vision models to understand."""
-        await self.browser.annotate_page()
         screenshot_base64 = await self.browser.take_screenshot()
 
-        user_message = {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": await self._get_page_description_prompt(),
-                },
+        is_new_page = self.browser.is_new_page()
+
+        content = [
+            {
+                "type": "text",
+                "text": await self._get_page_description_prompt(is_new_page),
+            }
+        ]
+
+        if not is_new_page:
+            content.append(
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/png;base64,{screenshot_base64}",
+                        "url": f"data:image/png;base64,{self.browser.previous_page_screenshot_base64}",
                     },
+                }
+            )
+
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{screenshot_base64}",
                 },
-            ],
+            }
+        )
+
+        user_message = {
+            "role": "user",
+            "content": content,
         }
         page_description_json = await self._make_llm_call(
             self.message_history + [user_message], self.vision_model
         )
+        self.observation_history.append(page_description_json)
+        print(json.dumps(page_description_json, indent=4))
         return json.dumps(page_description_json, indent=4)
 
     async def _plan_next_action(self, page_description: str) -> Tuple[str, str]:
-        """Observe the current state and plan the next action."""
-
+        """Plan the next action based on the page description"""
+        await self.browser.annotate_page()
         if not self.message_history:
             self._append_to_history("system", await self._get_system_prompt())
+
+        is_new_page = self.browser.is_new_page()
+        print(json.dumps(self.browser.label_simplified_htmls, indent=4))
 
         user_message = {
             "role": "user",
@@ -145,7 +168,9 @@ class Agent:
                 {
                     "type": "text",
                     "text": await self._get_planning_prompt(
-                        page_description, self.browser.label_simplified_htmls
+                        is_new_page,
+                        page_description,
+                        self.browser.label_simplified_htmls,
                     ),
                 }
             ],
@@ -154,6 +179,7 @@ class Agent:
 
         response_json = await self._make_llm_call(self.message_history, self.model)
         self._append_to_history("assistant", response_json)
+        self.planning_history.append(response_json)
         print(json.dumps(response_json, indent=4))
         return response_json["action"], response_json["action_args"]
 
@@ -192,7 +218,7 @@ POSSIBLE ACTIONS
 - CLICK: click a specific element on the page
 - TYPE: type text into a text box on the page (only use this if you need to fill out an input box without immediately triggering a form submission)
 - TYPE_AND_SUBMIT: type text into a text box on the page and submit (e.g. search bar). Use this when the input field is designed to immediately perform an action upon receiving text.
-- SCROLL_DOWN: scroll down on the page
+- SCROLL_DOWN: scroll down on the page.
 - SCROLL_UP: scroll up on the page
 - GO_BACK: go back to the previous page
 - GO_TO: go to a specific url
@@ -202,35 +228,35 @@ POSSIBLE ACTIONS
 
 TASKS
 For every response, you must always complete the following tasks
-1. What is the next goal that would bring you closer to your objective?
-2. Is there currently a visible element on the page that you can interact with to get closer to your objective? If so, what is it? If not, would scrolling up or down help you get closer to your objective? Or should you go to a different page?
-3. Output the action you want to take
-4. Provide arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "action_args" to an empty list. When you are typing text, provide the text you want to type as the second argument.
+1. Reflect on whether the last action you took ({self.planning_history[-1]["action_description"] if self.planning_history else "N/A"}) successfully achieved your previous strategic goal. If the page did not change as a result of the action, does not look as expected, or the action was not successful, the action was not successful.
+2. What is your next high-level goal? This should be a high-level outcome (like "Add the laptop to cart") rather than a specific action (like "Click the search button" or "Click add to cart"). If you haven't achieved your previous goal, you can keep the same goal unless there's a compelling reason to change it.
+3. Is there currently a visible element on the page that you can interact with to get closer to your objective? If so, what is it? If not, would scrolling up or down help you get closer to your objective? Or should you go to a different page?
+4. Concisely describe the action you want to take in a way that is easy for a human to understand.
+5. Output the action you want to take
+6. Provide arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "action_args" to an empty list. When you are typing text, provide the text you want to type as the second argument.
+
+
+TIPS:
+- Use scroll to find elements you are looking for
+- If none of the visible elements on the page are appropriate for the action you want to take, try to scroll down the page to see if you can find any.
+- If you are stuck, try alternative approaches - like going back to a previous page, new search, new tab etc.
 
 
 Respond with a JSON object with the following fields:
 {{
-    "next_goal": <Task 1>,
-    "reasoning": <Task 2>,
-    "action": <Task 3>,
-    "action_args": <Task 4>,
+    "previous_action_evaluation": <Task 1>,
+    "goal": <Task 2>,
+    "reasoning": <Task 3>,
+    "action_description": <Task 4>,
+    "action": <Task 5>,
+    "action_args": <Task 6>,
 }}
 """
 
-    async def _get_page_description_prompt(self) -> str:
+    async def _get_page_description_prompt(self, is_new_page: bool) -> str:
         """Returns the prompt template for observation phase"""
-        scroll_percentage = await self.browser.get_scroll_percentage()
-        if scroll_percentage is not None:
-            scroll_percentage_block = f"The page is currently scrolled {scroll_percentage}% from the top (0% = top, 100% = bottom)."
-        else:
-            scroll_percentage_block = ""
-
-        return f"""You are currently on a specific page of {self.browser.get_site_name()}. The exact url is {self.browser.page.url}.
-
-The page is annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
-
-{scroll_percentage_block}
-
+        if is_new_page:
+            return f"""You are currently on a specific page of {self.browser.get_site_name()}. The exact url is {self.browser.page.url}.
 
 Describe the page in detail. Use context clues from both the image and previous conversation to help you figure out what the page is about. Output a JSON object with the following fields:
 {{
@@ -239,22 +265,62 @@ Describe the page in detail. Use context clues from both the image and previous 
 }}
 """
 
+        return f"""You are currently on a specific page of {self.browser.get_site_name()}. The exact url is {self.browser.page.url}.
+
+The last action you took on the page was: {self.planning_history[-1]["action_description"] if self.planning_history else "N/A"}
+
+You are given two screenshots of the page. The first screenshot is the state of the page before your last action. The second screenshot is of the current state of the page.
+
+
+Describe what has happened on the page since the previous screenshot. This will be used to evaluate whether your last action was successful. Use context clues from both the image and your last action to help you figure out what the page is about. Output a JSON object with the following fields:
+{{
+    "page_changes": <Description of the differences between the two screenshots>,
+    "key_content": <Description of the key content on the current state of the page>,
+    "page_overview": <One sentence summary of the current state of the page and its purpose>,
+}}
+"""
+
     async def _get_planning_prompt(
-        self, page_description: str, label_simplified_htmls: Dict[str, str]
+        self,
+        is_new_page: bool,
+        page_description: str,
+        label_simplified_htmls: Dict[str, str],
     ) -> str:
         """Returns the prompt template for planning the next action"""
-        scroll_percentage = await self.browser.get_scroll_percentage()
-        if scroll_percentage is not None:
-            scroll_percentage_block = f"The page is currently scrolled {scroll_percentage}% from the top (0% = top, 100% = bottom)."
+        pixels_above, pixels_below = await self.browser.get_pixels_above_below()
+
+        has_content_above = pixels_above > 0
+        has_content_below = pixels_below > 0
+
+        elements_text = json.dumps(label_simplified_htmls, indent=4)
+        if elements_text:
+            if has_content_above:
+                elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
+            else:
+                elements_text = f"[Start of page]\n{elements_text}"
+            if has_content_below:
+                elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
+            else:
+                elements_text = f"{elements_text}\n[End of page]"
         else:
-            scroll_percentage_block = ""
-        return f"""You are currently on a specific page of {self.browser.get_site_name()}. The exact url is {self.browser.page.url}. {scroll_percentage_block}
+            elements_text = "None"
+
+        if is_new_page:
+            return f"""You are currently on a new page of {self.browser.get_site_name()}. The exact url is {self.browser.page.url}.
 
 Here is a description of the page:
 {page_description}
 
 Here are the visible elements you can interact with:
-{json.dumps(label_simplified_htmls, indent=4)}
+{elements_text}
+"""
+        return f"""You are on the same page of {self.browser.get_site_name()}. The exact url is {self.browser.page.url}.
+
+Here is a description of how the page has changed as a result of your last action:
+{page_description}
+
+Here are the visible elements you can interact with:
+{elements_text}
 """
 
     # Human Control Methods
@@ -270,6 +336,7 @@ Here are the visible elements you can interact with:
             )
             if user_input == "":  # Empty string means Enter was pressed
                 self.human_control = False
+                print("Yielding control back to the agent.")
                 break
             print("Please press 'Enter' key only.")
 
