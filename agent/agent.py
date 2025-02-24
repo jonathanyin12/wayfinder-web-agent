@@ -33,6 +33,7 @@ class Agent:
 
         self.observation_history: List[Dict[str, Any]] = []
         self.planning_history: List[Dict[str, Any]] = []
+        self.action_history: List[Dict[str, Any]] = []
 
         # Browser Setup
         self.browser = AgentBrowser()
@@ -65,8 +66,10 @@ class Agent:
                 await self._wait_for_human_input()
                 continue
 
+            action = response_json["action"]
+            self.action_history.append(action)
             async with self._timed_operation("Execution"):
-                await self._execute_action(response_json["action"])
+                await self._execute_action(action)
 
     # LLM  Methods
     async def _make_llm_call(
@@ -78,6 +81,7 @@ class Agent:
         """Helper method to make LLM API calls with retry logic"""
         async with self._timed_operation(f"{model} call"):
             try:
+                self._print_message_history(messages)
                 response = await self.client.chat.completions.create(
                     model=model,
                     messages=messages,
@@ -131,9 +135,15 @@ class Agent:
                 },
             ],
         }
-        self._append_to_history("user", user_message["content"])
 
-        response = await self._make_llm_call(self.message_history, self.model)
+        response = await self._make_llm_call(
+            self.message_history + [user_message], self.model
+        )
+
+        if len(self.action_history) > 0:
+            dummy_user_message = f"Performed the following action: {self.action_history[-1]['action_description']}"
+            self._append_to_history("user", dummy_user_message)
+
         self._append_to_history("assistant", response)
         response_json = json.loads(response)
         self.planning_history.append(response_json)
@@ -191,7 +201,7 @@ POSSIBLE ACTIONS
 TASK: Respond with a JSON object with the following fields:
 {{
     "planning": {{
-        "page_summary": "Quick detailed summary of new information from the current page which is not yet in the task history memory. Be specific with details which are important for the task. This is not on the meta level, but should be facts. If all the information is already in the task history memory, leave this empty.",
+        "page_summary": "Quick detailed summary of new information from the current page which is not yet in the task history memory. Be specific with details which are important for the task.",
 		"evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happened like new suggestions in an input field. Shortly state why/why not",
         "memory": "Description of what has been done and what you need to remember. Be very specific. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
         "next_goal": "What needs to be done with the next actions"
@@ -237,7 +247,7 @@ TIPS:
 
 The exact url is {self.browser.page.url}.
 
-The page is annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
+The screenshot of the page is annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
 
 
 Here are the visible elements you can interact with:
@@ -260,3 +270,15 @@ Here are the visible elements you can interact with:
     async def _detect_captcha(self, page_description: str) -> bool:
         """Detect if a captcha is present on the page by simply checking if the description of the page contains the word 'captcha'"""
         return "captcha" in page_description.lower()
+
+    def _print_message_history(self, message_history: List[Dict[str, Any]]):
+        for message in message_history:
+            print(message["role"].upper())
+            if isinstance(message["content"], list):
+                for content in message["content"]:
+                    if content["type"] == "text":
+                        print(content["text"])
+                    elif content["type"] == "image_url":
+                        print("image")
+            else:
+                print(message["content"])
