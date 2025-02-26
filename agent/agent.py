@@ -16,7 +16,8 @@ load_dotenv()
 class Agent:
     # Configuration and Initialization
     def __init__(self, identity: str = "", objective: str = ""):
-        self.model = "gpt-4o"
+        self.action_model = "gpt-4o"
+        self.planning_model = "o1"
         self.max_retries = 3
 
         # Agent State
@@ -47,6 +48,7 @@ class Agent:
 
     async def execute_agent_loop(self):
         """Main agent loop: observe, plan, and execute actions."""
+        print(f"BEGINNING TASK: {self.objective}")
         while True:
             # self._print_message_history(self.message_history)
 
@@ -62,7 +64,7 @@ class Agent:
                 continue
 
             next_step = planning_response["next_step"]
-            async with self._timed_operation("Choose next action"):
+            async with self._timed_operation("Choosing action"):
                 action = await self._choose_next_action(next_step)
                 print(action)
 
@@ -145,7 +147,7 @@ class Agent:
             *self.message_history,
             user_message,
         ]
-        response = await self._make_llm_call(messages, "o1")
+        response = await self._make_llm_call(messages, self.planning_model)
 
         response_json = json.loads(response)
 
@@ -195,7 +197,7 @@ class Agent:
             await self._get_system_message(),
             user_message,
         ]
-        response = await self._make_llm_call(messages, "gpt-4o")
+        response = await self._make_llm_call(messages, self.action_model)
         response_json = json.loads(response)
         self._append_to_history("assistant", response)
 
@@ -207,7 +209,6 @@ class Agent:
         """Execute the next action in the plan."""
         try:
             await self.browser.execute_action(action)
-            await self.browser.wait_for_page_load()
         except Exception as e:
             print(f"Error executing action: {e}\nTrying again next iteration...")
             # Remove last two messages from history on failure
@@ -292,7 +293,7 @@ TASK:
 
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
-4. Reason about what is an appropriate next step given the current state of the page and the overall objective. If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING.
+4. Reason about what is an appropriate next step given the current state of the page and the overall objective. If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. This must be achievable in a single action, so avoid something that require multiple actions like first scrolling then clicking.
 
 Respond with a JSON object with the following fields:
 {{

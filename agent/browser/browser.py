@@ -141,9 +141,6 @@ class AgentBrowser:
             case "END":
                 return
 
-        # Wait for any page load/navigation to complete
-        await self.wait_for_page_load()
-
         # Store the current page screenshot after the action completes
         await self.update_page_screenshots()
 
@@ -157,6 +154,7 @@ class AgentBrowser:
         )
 
     async def update_page_screenshots(self):
+        await self.wait_for_page_load()
         self.current_page_screenshot_base64 = await self.take_screenshot()
         await self.annotate_page()
         self.current_annotated_page_screenshot_base64 = await self.take_screenshot()
