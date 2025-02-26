@@ -3,8 +3,26 @@ from typing import Any, Dict, List
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage
 
+PRICING = {
+    "gpt-4o-mini": {
+        "prompt_tokens": 0.15 / 1000000,
+        "completion_tokens": 0.6 / 1000000,
+    },
+    "gpt-4o": {
+        "prompt_tokens": 2.5 / 1000000,
+        "completion_tokens": 10 / 1000000,
+    },
+    "o1": {
+        "prompt_tokens": 15 / 1000000,
+        "completion_tokens": 60 / 1000000,
+    },
+}
+
 
 class LLMClient:
+    # Class-level dictionary to track token usage globally across all instances
+    token_usage = {}
+
     def __init__(self):
         self.client = AsyncOpenAI()
         self.max_retries = 3
@@ -28,6 +46,21 @@ class LLMClient:
                 **({"tool_choice": "required"} if tools else {}),
                 **({"parallel_tool_calls": False} if tools else {}),
             )
+
+            # Track token usage by model
+            if model not in LLMClient.token_usage:
+                LLMClient.token_usage[model] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                }
+
+            # Update token counts
+            usage = response.usage
+            LLMClient.token_usage[model]["prompt_tokens"] += usage.prompt_tokens
+            LLMClient.token_usage[model]["completion_tokens"] += usage.completion_tokens
+            LLMClient.token_usage[model]["total_tokens"] += usage.total_tokens
+
             if tools:
                 return response.choices[0].message
             else:
@@ -37,6 +70,35 @@ class LLMClient:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
             print(f"Attempt {attempt + 1} failed with error: {str(e)}")
             return await self.make_call(messages, model, tools, attempt + 1)
+
+    @classmethod
+    def get_token_usage(cls) -> Dict[str, Dict[str, int]]:
+        """Get the current token usage statistics for all models
+
+        Returns:
+            A dictionary with token usage statistics by model
+        """
+        return cls.token_usage
+
+    @classmethod
+    def print_token_usage(cls) -> None:
+        """Print the current token usage statistics for all models"""
+        print("\n=== TOKEN USAGE STATISTICS ===")
+        for model, usage in cls.token_usage.items():
+            print(f"Model: {model}")
+            print(f"  Prompt tokens: {usage['prompt_tokens']}")
+            print(f"  Completion tokens: {usage['completion_tokens']}")
+            print(f"  Total tokens: {usage['total_tokens']}")
+            print(
+                f"  Cost: ${usage['prompt_tokens'] * PRICING[model]['prompt_tokens'] + usage['completion_tokens'] * PRICING[model]['completion_tokens']:.6f}"
+            )
+            print("----------------------------")
+        total_cost = sum(
+            usage["prompt_tokens"] * PRICING[model]["prompt_tokens"]
+            + usage["completion_tokens"] * PRICING[model]["completion_tokens"]
+            for model, usage in cls.token_usage.items()
+        )
+        print(f"Total cost: ${total_cost:.6f}")
 
     def create_user_message_with_images(
         self, text_content: str, images: List[str]

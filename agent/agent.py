@@ -106,6 +106,9 @@ class Agent:
                 else:
                     logger.warning("Action execution failed. Replanning...")
 
+            # Print token usage
+            self.llm_client.print_token_usage()
+
             # self.llm_client.print_message_history(self.message_history)
 
     # LLM Methods
