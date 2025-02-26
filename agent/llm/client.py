@@ -38,7 +38,7 @@ class LLMClient:
             print(f"Attempt {attempt + 1} failed with error: {str(e)}")
             return await self.make_call(messages, model, tools, attempt + 1)
 
-    def create_message_with_images(
+    def create_user_message_with_images(
         self, text_content: str, images: List[str]
     ) -> List[Dict[str, Any]]:
         """Helper to create a message with text and images
@@ -64,7 +64,7 @@ class LLMClient:
                     }
                 )
 
-        return content
+        return {"role": "user", "content": content}
 
     def print_message_history(self, message_history: List[Dict[str, Any]]) -> None:
         """Print the message history for debugging"""

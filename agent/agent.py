@@ -139,10 +139,11 @@ class Agent:
         images.append(self.browser.current_page_screenshot_base64)
 
         # Create content with text and images
-        content = self.llm_client.create_message_with_images(planning_prompt, images)
+        user_message = self.llm_client.create_user_message_with_images(
+            planning_prompt, images
+        )
 
         # Prepare and send message
-        user_message = {"role": "user", "content": content}
         messages = [*self.message_history, user_message]
 
         try:
@@ -193,10 +194,11 @@ class Agent:
         ]
 
         # Create content with text and images
-        content = self.llm_client.create_message_with_images(action_prompt, images)
+        user_message = self.llm_client.create_user_message_with_images(
+            action_prompt, images
+        )
 
         # Prepare and send message
-        user_message = {"role": "user", "content": content}
         messages = [self.message_history[0], user_message]
 
         tool_call_message = await self.llm_client.make_call(
