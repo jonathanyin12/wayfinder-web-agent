@@ -63,8 +63,6 @@ async def execute_action(
             case "go_to_url":
                 url = action.args["url"]
                 await go_to_url(page, url)
-            case "end":
-                return None
             case _:
                 logger.warning(f"Unknown action: {action.name}")
     except Exception as e:
@@ -204,10 +202,20 @@ TOOLS = [
             "description": "End the current task.",
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "The reason for ending the task.",
+                    },
+                    "output": {
+                        "type": "string",
+                        "description": "The output of the task if the task is an extraction/retrieval task.",
+                    },
+                },
+                "required": ["reason"],
                 "additionalProperties": False,
             },
-            "strict": True,
+            "strict": False,
         },
     },
 ]

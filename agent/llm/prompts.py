@@ -68,7 +68,7 @@ The first screenshot is the state of the page before the last action was perform
 
 The second screenshot is the current state of the page, after the last action was performed.
 
-Here are the elements you can interact with:
+Here are the elements you can interact with (element_id: element_html):
 {interactable_elements}
 
 
@@ -109,10 +109,10 @@ The exact url is {url}.
 
 The first screenshot is the current state of the page after the last action was performed.
 
-The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. Each label is associated with the simplified html of the element.
+The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the id of the element. Each id is associated with the simplified html of the element.
 
 
-Here are the elements you can interact with:
+Here are the elements you can interact with (element_id: element_html):
 {interactable_elements}
 
 

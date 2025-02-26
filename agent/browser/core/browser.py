@@ -176,9 +176,10 @@ class AgentBrowser:
         # Execute the action
         result = await execute_action(self.page, action, self.label_selectors)
         if result:
-            formatted_result = f"Performed {action.name}: {result}"
+            formatted_result = f"Performed {action.name}. Result: {result}"
         else:
-            formatted_result = f"Performed {action.name}, outcome unknown"
+            formatted_result = f"Performed {action.name}. Outcome unknown."
+
         # Store the current page screenshot after the action completes
         await self._update_page_screenshots()
 

@@ -27,7 +27,7 @@ class Agent:
         identity: str = "",
         objective: str = "",
         action_model: str = "gpt-4o",
-        planning_model: str = "gpt-4o",
+        planning_model: str = "o1",
         default_url: str = "about:blank",
     ):
         # Agent Configuration
@@ -94,17 +94,19 @@ class Agent:
                 logger.info(f"Selected action: {action}")
 
             # Check for completion
-            if action.name == "END":
+            if action.name == "end":
                 logger.info("Completed task. Exiting...")
                 break
 
             # Execution phase
             async with self._timed_operation("Execution"):
-                success = await self._execute_action(action)
-                if not success:
+                outcome = await self._execute_action(action)
+                if outcome:
+                    logger.info(f"Action outcome: {outcome}")
+                else:
                     logger.warning("Action execution failed. Replanning...")
 
-            self.llm_client.print_message_history(self.message_history)
+            # self.llm_client.print_message_history(self.message_history)
 
     # LLM Methods
     def _append_to_history(self, role: str, content: Any) -> None:
@@ -213,8 +215,8 @@ class Agent:
         self.action_history.append(action)
         return action
 
-    async def _execute_action(self, action: AgentAction) -> bool:
-        """Execute the next action in the plan. Returns success status."""
+    async def _execute_action(self, action: AgentAction) -> Optional[str]:
+        """Execute the next action in the plan. Returns outcome."""
         try:
             result = await self.browser.execute_action(action)
             # Append tool message to history
@@ -225,14 +227,14 @@ class Agent:
                     "content": str(result),
                 }
             )
-            return True
+            return result
         except Exception as e:
             logger.error(f"Error executing action: {e}")
             logger.info("Trying again next iteration...")
             # Remove last two messages from history on failure
             if len(self.message_history) >= 2:
                 self.message_history = self.message_history[:-2]
-            return False
+            return None
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
