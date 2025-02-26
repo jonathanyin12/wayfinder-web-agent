@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 from .browser import AgentBrowser
+from .browser.core.action_executor import TOOLS
 from .llm import LLMClient, PromptManager
 from .models import AgentAction
 
@@ -26,8 +27,8 @@ class Agent:
         identity: str = "",
         objective: str = "",
         action_model: str = "gpt-4o",
-        planning_model: str = "o1",
-        default_url: str = "https://google.com",
+        planning_model: str = "gpt-4o",
+        default_url: str = "about:blank",
     ):
         # Agent Configuration
         self.action_model = action_model
@@ -37,7 +38,9 @@ class Agent:
         # Agent State
         self.identity = identity
         self.objective = objective  # The objective of the agent (e.g. "buy a macbook")
-        self.message_history: List[Dict[str, Any]] = []
+        self.message_history: List[Dict[str, Any]] = [
+            {"role": "system", "content": PromptManager(objective).get_system_prompt()}
+        ]
         self.action_history: List[AgentAction] = []
 
         # Components
@@ -60,6 +63,7 @@ class Agent:
         """Launch the agent with the specified URL or default URL."""
         target_url = url or self.default_url
         await self.browser.launch(target_url, headless)
+
         await self.execute_agent_loop()
 
     async def terminate(self) -> None:
@@ -100,17 +104,9 @@ class Agent:
                 if not success:
                     logger.warning("Action execution failed. Replanning...")
 
-    # LLM Methods
-    async def _get_system_message(self) -> Dict[str, Any]:
-        """Returns the system message for the agent"""
-        pixels_above, pixels_below = await self.browser.get_pixels_above_below()
-        return {
-            "role": "system",
-            "content": await self.prompt_manager.get_system_prompt(
-                pixels_above, pixels_below
-            ),
-        }
+            self.llm_client.print_message_history(self.message_history)
 
+    # LLM Methods
     def _append_to_history(self, role: str, content: Any) -> None:
         """Helper method to append messages to history"""
         self.message_history.append(
@@ -145,11 +141,7 @@ class Agent:
 
         # Prepare and send message
         user_message = {"role": "user", "content": content}
-        messages = [
-            await self._get_system_message(),
-            *self.message_history,
-            user_message,
-        ]
+        messages = [*self.message_history, user_message]
 
         try:
             response = await self.llm_client.make_call(messages, self.planning_model)
@@ -203,20 +195,36 @@ class Agent:
 
         # Prepare and send message
         user_message = {"role": "user", "content": content}
-        messages = [await self._get_system_message(), user_message]
+        messages = [self.message_history[0], user_message]
 
-        response = await self.llm_client.make_call(messages, self.action_model)
-        response_json = json.loads(response)
-        self._append_to_history("assistant", response)
+        tool_call_message = await self.llm_client.make_call(
+            messages, self.action_model, tools=TOOLS
+        )
+        # Append tool call message to history
+        self.message_history.append(tool_call_message)
 
-        action = AgentAction(**response_json)
+        tool_call = tool_call_message.tool_calls[0]
+        function_name = tool_call.function.name
+        args = json.loads(tool_call.function.arguments)
+
+        action = AgentAction(
+            name=function_name, description=next_step, args=args, id=tool_call.id
+        )
         self.action_history.append(action)
         return action
 
     async def _execute_action(self, action: AgentAction) -> bool:
         """Execute the next action in the plan. Returns success status."""
         try:
-            await self.browser.execute_action(action)
+            result = await self.browser.execute_action(action)
+            # Append tool message to history
+            self.message_history.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": action.id,
+                    "content": str(result),
+                }
+            )
             return True
         except Exception as e:
             logger.error(f"Error executing action: {e}")
