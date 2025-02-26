@@ -1,3 +1,7 @@
+"""
+Extract actions for retrieving information from web pages.
+"""
+
 import json
 
 import markdownify
@@ -7,7 +11,20 @@ from playwright.async_api import Page
 client = AsyncOpenAI()
 
 
-async def extract_page_information(page: Page, objective: str):
+async def extract_page_information(page: Page, objective: str) -> str:
+    """
+    Extract information from the page relevant to the given objective.
+
+    Uses GPT-4o to analyze the page content and extract relevant information
+    based on the specified objective.
+
+    Args:
+        page: The Playwright page
+        objective: The objective or goal for information extraction
+
+    Returns:
+        A string containing the extracted information
+    """
     page_content = await page.content()
     markdown_content = markdownify.markdownify(page_content)
 
