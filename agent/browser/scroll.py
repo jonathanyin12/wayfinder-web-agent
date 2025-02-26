@@ -18,17 +18,16 @@ async def scroll_up(page: Page):
 async def get_pixels_above_below(page: Page) -> Tuple[int, int]:
     pixels_above = await page.evaluate(
         """() => {
-            const h = document.documentElement;
-            const scrollTop = h.scrollTop || document.body.scrollTop;
-            return scrollTop;
+            const scrollingElement = document.scrollingElement || document.body;
+            return scrollingElement.scrollTop;
         }"""
     )
     pixels_below = await page.evaluate(
         """() => {
-            const h = document.documentElement;
-            const scrollTop = h.scrollTop || document.body.scrollTop;
-            const scrollHeight = h.scrollHeight || document.body.scrollHeight;
-            const clientHeight = h.clientHeight;
+            const scrollingElement = document.scrollingElement || document.body;
+            const scrollTop = scrollingElement.scrollTop;
+            const scrollHeight = scrollingElement.scrollHeight;
+            const clientHeight = window.innerHeight;
             return Math.max(0, scrollHeight - clientHeight - scrollTop);
         }"""
     )
