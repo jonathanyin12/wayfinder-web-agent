@@ -13,8 +13,8 @@ Here is your ultimate objective: {self.objective}.
 
 POSSIBLE ACTIONS:
 - click_element: click a specific element on the page
-- type_text: type text into a text box on the page
-- extract_info: extract specific information from the page. 
+- type_text: type text into a text box on the page and optionally submit the text
+- extract_info: extract specific information from the page
 - scroll: scroll up or down on the page
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url

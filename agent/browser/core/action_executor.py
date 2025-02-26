@@ -108,7 +108,7 @@ TOOLS = [
                     },
                     "submit": {
                         "type": "boolean",
-                        "description": "Whether to submit the text after typing it.",
+                        "description": "Whether to submit the text after typing it. Set to true when the input field requires form submission (like search boxes or login forms). Set to false when you want to type without submitting (like filling out multiple fields before submission).",
                     },
                 },
                 "required": ["element_id", "text", "submit"],
