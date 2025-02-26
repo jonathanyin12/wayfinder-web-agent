@@ -35,6 +35,7 @@ class AgentBrowser:
         self.page: Page = None
         self.previous_page_url: str = ""
         self.previous_page_screenshot_base64: str = ""
+        self.current_page_screenshot_base64: str = ""
 
         self.screenshot_index = 0
         self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
@@ -75,6 +76,7 @@ class AgentBrowser:
         )
         self.page = await self.context.new_page()
         await self.go_to(url)
+        self.current_page_screenshot_base64 = await self.take_screenshot()
 
     async def terminate(self):
         if self.browser:
@@ -103,8 +105,9 @@ class AgentBrowser:
         )
 
     async def execute_action(self, action: AgentAction):
-        # Save the previous page URL before executing the action in case the page changes
+        # Save the previous page URL and screenshot before executing the action
         self.previous_page_url = self.page.url
+        self.previous_page_screenshot_base64 = self.current_page_screenshot_base64
 
         match action.name:
             case "CLICK":
@@ -133,6 +136,12 @@ class AgentBrowser:
                 await refresh(self.page)
             case "END":
                 return
+
+        # Wait for any page load/navigation to complete
+        await self.wait_for_page_load()
+
+        # Store the current page screenshot after the action completes
+        self.current_page_screenshot_base64 = await self.take_screenshot()
 
     def get_site_name(self) -> str:
         base_url = get_base_url(self.page.url)
