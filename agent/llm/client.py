@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessage
 
 
 class LLMClient:
@@ -10,8 +11,9 @@ class LLMClient:
 
     async def make_call(
         self,
-        messages: List[Dict[str, Any]],
+        messages: List[ChatCompletionMessage],
         model: str,
+        tools: List[Dict[str, Any]] = None,
         attempt: int = 0,
     ) -> Dict[str, Any]:
         """Helper method to make LLM API calls with retry logic"""
@@ -19,18 +21,24 @@ class LLMClient:
             response = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
-                response_format={"type": "json_object"},
+                **({"response_format": {"type": "json_object"}} if not tools else {}),
                 **({"temperature": 0.0} if model.startswith("gpt-4o") else {}),
                 **({"reasoning_effort": "low"} if model.startswith("o") else {}),
+                **({"tools": tools} if tools else {}),
+                **({"tool_choice": "required"} if tools else {}),
+                **({"parallel_tool_calls": False} if tools else {}),
             )
-            return response.choices[0].message.content
+            if tools:
+                return response.choices[0].message
+            else:
+                return response.choices[0].message.content
         except Exception as e:
             if attempt >= self.max_retries - 1:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
             print(f"Attempt {attempt + 1} failed with error: {str(e)}")
-            return await self.make_call(messages, model, attempt + 1)
+            return await self.make_call(messages, model, tools, attempt + 1)
 
-    def create_message_with_images(
+    def create_user_message_with_images(
         self, text_content: str, images: List[str]
     ) -> List[Dict[str, Any]]:
         """Helper to create a message with text and images
@@ -56,18 +64,24 @@ class LLMClient:
                     }
                 )
 
-        return content
+        return {"role": "user", "content": content}
 
-    def print_message_history(self) -> None:
+    def print_message_history(self, message_history: List[Dict[str, Any]]) -> None:
         """Print the message history for debugging"""
-        for message in self.message_history:
+        for message in message_history:
+            if isinstance(message, ChatCompletionMessage):
+                message = message.model_dump()
             print(f"--- {message['role'].upper()} ---")
-            if isinstance(message["content"], list):
-                for content in message["content"]:
-                    if content["type"] == "text":
-                        print(content["text"])
-                    elif content["type"] == "image_url":
-                        print("[IMAGE]")
-            else:
-                print(message["content"])
-            print()
+            if message["content"]:
+                if isinstance(message["content"], list):
+                    for content in message["content"]:
+                        if content["type"] == "text":
+                            print(content["text"])
+                        elif content["type"] == "image_url":
+                            print("[IMAGE]")
+                else:
+                    print(message["content"])
+            elif message["tool_calls"]:
+                print("[TOOL CALLS]")
+                for tool_call in message["tool_calls"]:
+                    print(tool_call)

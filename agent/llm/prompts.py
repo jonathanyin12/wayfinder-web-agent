@@ -5,25 +5,20 @@ class PromptManager:
     def __init__(self, objective: str):
         self.objective = objective
 
-    async def get_system_prompt(self, pixels_above: int, pixels_below: int) -> str:
+    def get_system_prompt(self) -> str:
         """Returns the system prompt for the agent"""
-        scroll_down = (
-            "\n - SCROLL_DOWN: scroll down on the page." if pixels_below > 0 else ""
-        )
-        scroll_up = "\n - SCROLL_UP: scroll up on the page." if pixels_above > 0 else ""
-
-        return f"""You are a helpful web browsing assistant. 
+        return f"""You are a helpful web browsing assistant.    
         
 Here is your ultimate objective: {self.objective}.
 
 POSSIBLE ACTIONS:
-- CLICK: click a specific element on the page
-- TYPE: type text into a text box on the page (only use this if you need to fill out an input box without immediately triggering a form submission)
-- TYPE_AND_SUBMIT: type text into a text box on the page and submit (e.g. search bar). Use this when the input field is designed to immediately perform an action upon receiving text.
-- EXTRACT: extract information from the page. Only argument should be the extraction task (e.g. "summarize the reviews of the product on the page"){scroll_down}{scroll_up}
-- GO_BACK: go back to the previous page
-- GO_TO: go to a specific url
-- END: declare that you have completed the task
+- click_element: click a specific element on the page
+- type_text: type text into a text box on the page
+- extract_info: extract specific information from the page. 
+- scroll: scroll up or down on the page
+- navigate: go back to the previous page or go forward to the next page
+- go_to_url: go to a specific url
+- end: declare that you have completed the task
 
 
 TIPS:
@@ -73,7 +68,7 @@ The first screenshot is the state of the page before the last action was perform
 
 The second screenshot is the current state of the page, after the last action was performed.
 
-Here are the elements you can interact with:
+Here are the elements you can interact with (element_id: element_html):
 {interactable_elements}
 
 
@@ -84,7 +79,10 @@ TASK:
 
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
-4. Reason about what is an appropriate next step given the current state of the page and the overall objective. If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. This must be achievable in a single action, so avoid something that require multiple actions like first scrolling then clicking.
+4. Reason about what is an appropriate next step given the current state of the page and the overall objective. 
+- If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
+- This must be achievable in a single action, so avoid something that require multiple actions like first scrolling then clicking.
+- If the objective is complete, suggest ending the task.
 
 Respond with a JSON object with the following fields:
 {{
@@ -111,20 +109,14 @@ The exact url is {url}.
 
 The first screenshot is the current state of the page after the last action was performed.
 
-The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. Each label is associated with the simplified html of the element.
+The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the id of the element. Each id is associated with the simplified html of the element.
 
 
-Here are the elements you can interact with:
+Here are the elements you can interact with (element_id: element_html):
 {interactable_elements}
 
 
 TASK: 
 Choose the action that best matches the following next step:
 {next_step}
-
-Respond with a JSON object with the following fields:
-{{
-    "name": "Action name from the POSSIBLE ACTIONS section.",
-    "description": "A very short description of the action you are taking.",
-    "args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
-}}"""
+"""

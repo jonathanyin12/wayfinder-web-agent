@@ -7,6 +7,7 @@ class AgentAction:
     name: str
     description: str = None
     args: List[Any] = None
+    id: str = None
 
     def __post_init__(self):
         if self.args is None:

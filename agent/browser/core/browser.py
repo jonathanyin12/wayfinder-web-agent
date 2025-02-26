@@ -19,16 +19,9 @@ from playwright.async_api import (
 
 from ...models import AgentAction
 from ..actions.annotation import clear_annotations
-from ..actions.extract import extract_page_information
-from ..actions.input import type_and_enter, type_text
-from ..actions.interaction import click_element, hover_element
-from ..actions.navigation import go_back, go_forward, go_to_url, refresh
+from ..actions.navigation import go_to_url
 from ..actions.screenshot import take_element_screenshot, take_screenshot
-from ..actions.scroll import (
-    get_pixels_above_below,
-    scroll_down,
-    scroll_up,
-)
+from ..actions.scroll import get_pixels_above_below
 from ..utils.page_info import (
     get_formatted_interactable_elements,
     get_formatted_page_position,
@@ -72,23 +65,7 @@ class AgentBrowser:
 
         # Map method names to their implementations for dynamic dispatch
         self._method_map = {
-            # Input actions
-            "type": type_text,
-            "type_and_enter": type_and_enter,
-            # Interaction actions
-            "click": click_element,
-            "hover": hover_element,
-            "extract": extract_page_information,
-            # Navigation actions
-            "go_to": go_to_url,
-            "go_back": go_back,
-            "go_forward": go_forward,
-            "refresh": refresh,
-            # Scroll actions
-            "scroll_up": scroll_up,
-            "scroll_down": scroll_down,
             "get_pixels_above_below": get_pixels_above_below,
-            # Screenshot and annotation actions
             "take_screenshot": take_screenshot,
             "take_element_screenshot": take_element_screenshot,
             "clear_annotations": clear_annotations,
@@ -126,7 +103,7 @@ class AgentBrowser:
         )
 
         self.page = await self.context.new_page()
-        await self.go_to(url)
+        await go_to_url(self.page, url)
         await self._update_page_screenshots()
 
         return self.context, self.page
@@ -197,10 +174,16 @@ class AgentBrowser:
         await self.clear_annotations()
 
         # Execute the action
-        await execute_action(self.page, action, self.label_selectors)
+        result = await execute_action(self.page, action, self.label_selectors)
+        if result:
+            formatted_result = f"Performed {action.name}. Result: {result}"
+        else:
+            formatted_result = f"Performed {action.name}. Outcome unknown."
 
         # Store the current page screenshot after the action completes
         await self._update_page_screenshots()
+
+        return formatted_result
 
     # Page information methods
     # ------------------------------------------------------------------------
