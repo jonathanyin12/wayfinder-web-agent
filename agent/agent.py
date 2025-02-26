@@ -25,8 +25,6 @@ class Agent:
         self.objective = objective  # The objective of the agent (e.g. "buy a macbook")
         self.message_history: List[Dict[str, Any]] = []
 
-        self.observation_history: List[Dict[str, Any]] = []
-        self.planning_history: List[Dict[str, Any]] = []
         self.action_history: List[Dict[str, Any]] = []
 
         # Browser Setup
@@ -52,19 +50,20 @@ class Agent:
         while True:
             # self._print_message_history(self.message_history)
 
-            async with self._timed_operation("Evaluation & Planning"):
-                eval_planning_response = await self._evaluate_and_plan_next_action()
-                print(json.dumps(eval_planning_response, indent=4))
+            async with self._timed_operation("Planning"):
+                planning_response = await self._plan_next_action()
+                print(json.dumps(planning_response, indent=4))
 
-            # page_description = eval_planning_response["page_summary"]
-            # captcha_detected = await self._detect_captcha(page_description)
-            # if captcha_detected:
-            #     print("Captcha detected. Yielding control to human.")
-            #     await self._wait_for_human_input()
-            #     continue
+            page_description = planning_response["page_summary"]
+            captcha_detected = await self._detect_captcha(page_description)
+            if captcha_detected:
+                print("Captcha detected. Yielding control to human.")
+                await self._wait_for_human_input()
+                continue
 
+            next_step = planning_response["next_step"]
             async with self._timed_operation("Choose next action"):
-                action = await self._choose_next_action(eval_planning_response)
+                action = await self._choose_next_action(next_step)
                 print(action)
 
             if action.name == "END":
@@ -89,7 +88,7 @@ class Agent:
                 messages=messages,
                 response_format={"type": "json_object"},
                 **({"temperature": 0.0} if model.startswith("gpt-4o") else {}),
-                **({"reasoning_effort": "high"} if model.startswith("o") else {}),
+                **({"reasoning_effort": "low"} if model.startswith("o") else {}),
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -108,16 +107,15 @@ class Agent:
         )
 
     # Main Methods
-    async def _evaluate_and_plan_next_action(self) -> Tuple[str, str]:
+    async def _plan_next_action(self) -> Tuple[str, str]:
         """Evaluate the current page and plan the next action"""
 
         content = [
             {
                 "type": "text",
-                "text": await self._get_evaluation_planning_prompt(),
+                "text": await self._get_planning_prompt(),
             }
         ]
-
         if self.browser.previous_page_screenshot_base64:
             content.append(
                 {
@@ -128,7 +126,6 @@ class Agent:
                     },
                 }
             )
-
         content.append(
             {
                 "type": "image_url",
@@ -148,39 +145,35 @@ class Agent:
             *self.message_history,
             user_message,
         ]
-        response = await self._make_llm_call(messages, self.model)
+        response = await self._make_llm_call(messages, "o1")
 
         response_json = json.loads(response)
 
-        formatted_response = f"""Goal: {response_json["next_goal"]}"""
-
-        if "evaluation" in response_json:
+        formatted_response = f"""Page summary: {response_json["page_summary"]}"""
+        if "previous_action_evaluation" in response_json:
+            formatted_response = f"{formatted_response}\n\nPrevious action outcome: {response_json['previous_action_evaluation']}"
+        if "progress" in response_json:
             formatted_response = (
-                f"{response_json['evaluation']}\n\n{formatted_response}"
+                f"{formatted_response}\n\nProgress: {response_json['progress']}"
             )
+        formatted_response = (
+            f"{formatted_response}\n\nNext step: {response_json['next_step']}"
+        )
 
         self._append_to_history("user", formatted_response)
-        self.planning_history.append(response_json)
         return response_json
 
     async def _choose_next_action(
         self,
-        eval_planning_response: Dict[str, Any],
+        next_step: str,
     ) -> AgentAction:
         """Choose the next action to take"""
-        await self.browser.annotate_page()
-        annotated_screenshot_base64 = await self.browser.take_screenshot()
-
-        # print(json.dumps(self.browser.label_simplified_htmls, indent=4))
         user_message = {
             "role": "user",
             "content": [
                 {
                     "type": "text",
-                    "text": await self._get_action_prompt(
-                        eval_planning_response,
-                        self.browser.label_simplified_htmls,
-                    ),
+                    "text": await self._get_action_prompt(next_step),
                 },
                 {
                     "type": "image_url",
@@ -192,7 +185,7 @@ class Agent:
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/png;base64,{annotated_screenshot_base64}",
+                        "url": f"data:image/png;base64,{self.browser.current_annotated_page_screenshot_base64}",
                         "detail": "high",
                     },
                 },
@@ -200,21 +193,18 @@ class Agent:
         }
         messages = [
             await self._get_system_message(),
-            *self.message_history[:-1],
             user_message,
         ]
-        response = await self._make_llm_call(messages, self.model)
+        response = await self._make_llm_call(messages, "gpt-4o")
         response_json = json.loads(response)
         self._append_to_history("assistant", response)
 
-        action = AgentAction(**response_json)
+        action = AgentAction(**response_json, description=next_step)
         self.action_history.append(action)
         return action
 
     async def _execute_action(self, action: AgentAction) -> None:
         """Execute the next action in the plan."""
-        await self.browser.clear_annotations()
-
         try:
             await self.browser.execute_action(action)
             await self.browser.wait_for_page_load()
@@ -254,149 +244,95 @@ TIPS:
 - If you are stuck, try alternative approaches, like going back to a previous page, new search, new tab etc. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING.
 """
 
-    async def _get_evaluation_planning_prompt(self) -> str:
+    async def _get_planning_prompt(self) -> str:
         """Returns the prompt template for planning the next action"""
-
         if len(self.action_history) == 0:
-            return f"""TASK:
-Suggest the next goal that will help you achieve your ultimate objective. This should be a short sentence of phrase.
-            
-You are currently on a page of {self.browser.get_site_name()}, as shown in the image below.
+            return f"""CONTEXT:
+You are on a page of {self.browser.get_site_name()}. {await self.browser.get_formatted_page_position()}
 
 The exact url is {self.browser.page.url}.
 
-Respond with a JSON object with the following field:
+The screenshot is the current state of the page.
+
+Here are the elements you can interact with:
+{await self.browser.get_formatted_interactable_elements()}
+
+
+
+TASK:
+1. Provide a detailed summary of key information relevant to the task from the current page.
+
+2. Reason about what is an appropriate next step given the current state of the page and the overall objective.
+
+Respond with a JSON object with the following fields:
 {{
-    "next_goal": <response>
+    "page_summary": <Task 1>,
+    "next_step": <Task 2>
 }}
 """
         last_action = self.action_history[-1]
         last_action_description = last_action.description
-        return f"""TASK:
-1. Analyze whether the last action you attempted was successful by carefully comparing the before and after screenshots:
-
-The last action you attempted: {last_action_description}
-
-You are on a page of {self.browser.get_site_name()}. 
+        return f"""CONTEXT:
+You are on a page of {self.browser.get_site_name()}. {await self.browser.get_formatted_page_position()}
 
 The exact url is {self.browser.page.url}.
 
-The first image is the page BEFORE the last action was attempted.
-The second image is the current state of the page, after the last action was attempted.
+The first screenshot is the state of the page before the last action was performed.
+
+The second screenshot is the current state of the page, after the last action was performed.
+
+Here are the elements you can interact with:
+{await self.browser.get_formatted_interactable_elements()}
 
 
-First, let's check the intended goal:
-- What was the action trying to achieve?
-- What would success look like for this specific action?
+TASK:
+1. Provide a detailed summary of key information relevant to the task from the current page which is not yet in the task history memory.
 
-Next, let's examine visual changes:
-- What differences can we see between the before and after screenshots?
-- Are these changes what we would expect from a successful action?
+2. Reason about whether the previous action ("{last_action_description}") was successful or not. Carefully compare the before and after screenshots to verify whether the action was successful. Consider what UX changes are expected for the action you took.
 
-Then, let's verify the outcome:
-- For clicks: Did the expected UI changes occur? (e.g. new page load, modal opening)
-- For navigation: Does the URL and page content match our destination?
-- For form submission: Do we see success indicators or error messages?
-- For data extraction: Is the target information visible and accessible?
-- For scrolling: Has the viewport moved as expected?
+3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
-Finally, let's assess overall success:
-- Based on all the evidence above, did the action achieve its goal?
-- If not, what specifically went wrong?
-- Are there any unexpected side effects we should note?
-
-Show your work in a step by step manner.
-        
-2. If your last action was unsuccessful, reason about why it was unsuccessful. Otherwise, output "n/a".
-
-3. If the current goal is not fully complete, set the next goal as the remaining steps needed to complete the goal. If the goal is complete, suggest a next goal that will help you achieve your ultimate objective. If you realize that the goal is impossible, suggest an alternative goal. If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING.
-
+4. Reason about what is an appropriate next step given the current state of the page and the overall objective. If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING.
 
 Respond with a JSON object with the following fields:
 {{
-    "evaluation": <task 1>,
-    "failure_reason": <task 2>,
+    "page_summary": <Task 1>,
+    "previous_action_evaluation": <Task 2>,
+    "progress": <Task 3>,
+    "next_step": <Task 4>
 }}
 """
 
     async def _get_action_prompt(
         self,
-        eval_planning_response: Dict[str, Any],
-        label_simplified_htmls: Dict[str, str],
+        next_step: Dict[str, Any],
     ) -> str:
         """Returns the prompt template for planning the next action"""
-        pixels_above, pixels_below = await self.browser.get_pixels_above_below()
 
-        has_content_above = pixels_above > 0
-        has_content_below = pixels_below > 0
-
-        elements_text = json.dumps(label_simplified_htmls, indent=4)
-        if elements_text:
-            if has_content_above:
-                elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
-            else:
-                elements_text = f"[Top of page]\n{elements_text}"
-            if has_content_below:
-                elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
-            else:
-                elements_text = f"{elements_text}\n[Bottom of page]"
-        else:
-            elements_text = "None"
-
-        if has_content_above and has_content_below:
-            page_position = "You are in the middle of the page. You can scroll up or down to see more."
-        elif has_content_above:
-            page_position = (
-                "You are at the top of the page. You can scroll down to see more."
-            )
-        elif has_content_below:
-            page_position = (
-                "You are at the bottom of the page. You can scroll up to see more."
-            )
-        else:
-            page_position = ""
-
-        next_goal = f"[Next goal]\n{eval_planning_response['next_goal']}"
-
-        if "evaluation" in eval_planning_response:
-            evaluation = (
-                f"[Feedback on the last action]\n{eval_planning_response['evaluation']}"
-            )
-        else:
-            evaluation = ""
-
-        return f"""TASK:
-Choose the most appropriate action to take that gets you closer to achieving the following goal:
-{next_goal}
-
-
-{evaluation}
-
-
-Respond with a JSON object with the following fields:
-{{
-    "description": "Very short description of the action you want to take.",
-    "name": "Action name from the POSSIBLE ACTIONS section.",
-    "args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
-}}
-
-
-
-CONTEXT:
-You are on a page of {self.browser.get_site_name()}. 
-{page_position}
+        return f"""CONTEXT:
+You are on a page of {self.browser.get_site_name()}. {await self.browser.get_formatted_page_position()}
 
 The exact url is {self.browser.page.url}.
 
-The first screenshot is the original page. 
+The first screenshot is the current state of the page after the last action was performed.
 
-The second screenshot is the page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
+The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. Each label is associated with the simplified html of the element.
 
 
-Here are the visible elements you can interact with:
-{elements_text}
+Here are the elements you can interact with:
+{await self.browser.get_formatted_interactable_elements()}
 
-"""
+
+
+TASK: 
+Choose the action that best matches the following next step:
+{next_step}
+
+Respond with a JSON object with the following fields:
+{{
+    "name": "Action name from the POSSIBLE ACTIONS section.",
+    "args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
+}}"""
 
     # Human Control Methods
 

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Tuple
 
@@ -36,6 +37,7 @@ class AgentBrowser:
         self.previous_page_url: str = ""
         self.previous_page_screenshot_base64: str = ""
         self.current_page_screenshot_base64: str = ""
+        self.current_annotated_page_screenshot_base64: str = ""
 
         self.screenshot_index = 0
         self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
@@ -76,7 +78,8 @@ class AgentBrowser:
         )
         self.page = await self.context.new_page()
         await self.go_to(url)
-        self.current_page_screenshot_base64 = await self.take_screenshot()
+
+        await self.update_page_screenshots()
 
     async def terminate(self):
         if self.browser:
@@ -108,6 +111,7 @@ class AgentBrowser:
         # Save the previous page URL and screenshot before executing the action
         self.previous_page_url = self.page.url
         self.previous_page_screenshot_base64 = self.current_page_screenshot_base64
+        await self.clear_annotations()
 
         match action.name:
             case "CLICK":
@@ -141,7 +145,7 @@ class AgentBrowser:
         await self.wait_for_page_load()
 
         # Store the current page screenshot after the action completes
-        self.current_page_screenshot_base64 = await self.take_screenshot()
+        await self.update_page_screenshots()
 
     def get_site_name(self) -> str:
         base_url = get_base_url(self.page.url)
@@ -151,6 +155,11 @@ class AgentBrowser:
         self.label_selectors, self.label_simplified_htmls = await self.page.evaluate(
             ANNOTATE_PAGE_TEMPLATE
         )
+
+    async def update_page_screenshots(self):
+        self.current_page_screenshot_base64 = await self.take_screenshot()
+        await self.annotate_page()
+        self.current_annotated_page_screenshot_base64 = await self.take_screenshot()
 
     async def wait_for_page_load(self):
         try:
@@ -162,3 +171,42 @@ class AgentBrowser:
     def is_new_page(self) -> bool:
         """Check if the current page is different from the last page"""
         return self.previous_page_url != self.page.url
+
+    async def get_formatted_interactable_elements(self) -> str:
+        pixels_above, pixels_below = await self.get_pixels_above_below()
+
+        has_content_above = pixels_above > 0
+        has_content_below = pixels_below > 0
+
+        elements_text = json.dumps(self.label_simplified_htmls, indent=4)
+        if elements_text:
+            if has_content_above:
+                elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
+            else:
+                elements_text = f"[Top of page]\n{elements_text}"
+            if has_content_below:
+                elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
+            else:
+                elements_text = f"{elements_text}\n[Bottom of page]"
+        else:
+            elements_text = "None"
+
+        return elements_text
+
+    async def get_formatted_page_position(self) -> str:
+        pixels_above, pixels_below = await self.get_pixels_above_below()
+        has_content_above = pixels_above > 0
+        has_content_below = pixels_below > 0
+
+        if has_content_above and has_content_below:
+            page_position = "You are in the middle of the page."
+        elif has_content_above:
+            page_position = "You are at the top of the page."
+        elif has_content_below:
+            page_position = "You are at the bottom of the page."
+        else:
+            page_position = (
+                "The entire page is visible. No scrolling is needed/possible."
+            )
+
+        return page_position
