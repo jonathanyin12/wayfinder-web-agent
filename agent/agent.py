@@ -16,7 +16,7 @@ load_dotenv()
 class Agent:
     # Configuration and Initialization
     def __init__(self, identity: str = "", objective: str = ""):
-        self.model = "gpt-4o"
+        self.model = "o1"
         self.max_retries = 3
 
         # Agent State
@@ -53,12 +53,12 @@ class Agent:
             async with self._timed_operation("Observation & Planning"):
                 response_json = await self._observe_and_plan_next_action()
 
-            page_description = response_json["planning"]["page_summary"]
-            captcha_detected = await self._detect_captcha(page_description)
-            if captcha_detected:
-                print("Captcha detected. Yielding control to human.")
-                await self._wait_for_human_input()
-                continue
+            # page_description = response_json["planning"]["page_summary"]
+            # captcha_detected = await self._detect_captcha(page_description)
+            # if captcha_detected:
+            #     print("Captcha detected. Yielding control to human.")
+            #     await self._wait_for_human_input()
+            #     continue
 
             action = AgentAction(**response_json["action"])
             self.action_history.append(action)
@@ -85,7 +85,7 @@ class Agent:
                     messages=messages,
                     response_format={"type": "json_object"},
                     **({"temperature": 0.0} if model.startswith("gpt-4o") else {}),
-                    **({"reasoning_effort": "high"} if model.startswith("o") else {}),
+                    **({"reasoning_effort": "low"} if model.startswith("o") else {}),
                 )
                 return response.choices[0].message.content
             except Exception as e:
@@ -116,8 +116,6 @@ class Agent:
         if not self.message_history:
             self._append_to_history("system", await self._get_system_prompt())
 
-        print(json.dumps(self.browser.label_simplified_htmls, indent=4))
-
         user_message = {
             "role": "user",
             "content": [
@@ -131,7 +129,7 @@ class Agent:
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/png;base64,{screenshot_base64}",
-                        "detail": "low",
+                        "detail": "high",
                     },
                 },
                 {
@@ -192,23 +190,6 @@ POSSIBLE ACTIONS
 - END: declare that you have completed the task
 
 
-
-TASK: Respond with a JSON object with the following fields:
-{{
-    "planning": {{
-        "page_summary": "Quick detailed summary of new information from the current page which is not yet in the task history memory. Be specific with details which are important for the task.",
-		"evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happened like new suggestions in an input field. Shortly state why/why not",
-        "memory": "Description of what has been done and what you need to remember. Be very specific. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
-        "next_goal": "What needs to be done with the next actions"
-    }},
-    "action" : {{
-        "description": "Very short description of the action you want to take.",
-        "name": "Action name from the POSSIBLE ACTIONS section.",
-        "args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
-    }}
-}}
-
-
 TIPS:
 - Use scroll to find elements you are looking for
 - If none of the visible elements on the page are appropriate for the action you want to take, try to scroll down the page to see if you can find any.
@@ -230,25 +211,51 @@ TIPS:
             if has_content_above:
                 elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
             else:
-                elements_text = f"[Start of page]\n{elements_text}"
+                elements_text = f"[Top of page]\n{elements_text}"
             if has_content_below:
                 elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
             else:
-                elements_text = f"{elements_text}\n[End of page]"
+                elements_text = f"{elements_text}\n[Bottom of page]"
         else:
             elements_text = "None"
 
-        return f"""You are on a page of {self.browser.get_site_name()}. 
+        page_position = ""
+        if has_content_above and has_content_below:
+            page_position = "You are in the middle of the page."
+        elif has_content_below:
+            page_position = "You are at the top of the page."
+        elif has_content_above:
+            page_position = "You are at the bottom of the page."
+
+        return f"""CONTEXT:
+You are on a page of {self.browser.get_site_name()}. {page_position}
 
 The exact url is {self.browser.page.url}.
 
-The first screenshot is the original page. 
+The first screenshot is the current state of the page after the previous action was performed.
 
-The second screenshot is the page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. If something doesn't have a bounding box around it, you cannot interact with it. Each label is associated with the simplified html of the element.
+The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the label of the element. Each label is associated with the simplified html of the element.
 
 
-Here are the visible elements you can interact with:
+Here are the elements you can interact with:
 {elements_text}
+
+
+
+TASK: Respond with a JSON object with the following fields:
+{{
+    "planning": {{
+        "page_summary": "Detailed summary of key information relevant to the task from the current page which is not yet in the task history memory.",
+        "evaluate_previous_action": "Reason about whether the previous action was successful or not.",
+        "progress": "Summarize what has been done (since the beginning) and what hasn't been done yet in an abstract way. DO NOT COMMENT ABOUT WHAT ACTIONS YOU ARE GOING TO TAKE. ONLY COMMENT ON WHAT HAS BEEN DONE AND WHAT IS LEFT TO DO.",
+        "next_step": "Reason about what is an appropriate next step. Consider a few different options and reason about the pros and cons of each. Ultimately, choose the one that is most likely to lead to the completion of the task."
+    }},
+    "action" : {{
+        "description": "Very short description of the action you want to take.",
+        "name": "Action name from the POSSIBLE ACTIONS section.",
+        "args": "Arguments needed for the action in a list. If you are interacting with an element, you must provide the element number as the first argument. If you don't need to provide any additional arguments (e.g. you are just scrolling), set the "args" to an empty list. When you are typing text, provide the text you want to type as the second argument."
+    }}
+}}
 """
 
     # Human Control Methods
