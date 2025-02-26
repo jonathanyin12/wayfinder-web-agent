@@ -74,7 +74,7 @@ class Agent:
             # Planning phase
             async with self._timed_operation("Planning"):
                 planning_response = await self._plan_next_action()
-                logger.debug(json.dumps(planning_response, indent=4))
+                logger.info(json.dumps(planning_response, indent=4))
 
             # Check for captcha
             page_description = planning_response["page_summary"]

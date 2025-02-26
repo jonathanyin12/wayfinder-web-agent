@@ -32,7 +32,7 @@ async def wait_for_page_load(page: Page) -> None:
 
 async def update_page_screenshots(
     page: Page, screenshot_folder: str, screenshot_index: int
-) -> Tuple[str, str, int]:
+) -> Tuple[str, str, int, list, list]:
     """
     Update the page screenshots.
 
@@ -42,7 +42,7 @@ async def update_page_screenshots(
         screenshot_index: Current screenshot index
 
     Returns:
-        Tuple containing (current_screenshot_base64, annotated_screenshot_base64, new_screenshot_index)
+        Tuple containing (current_screenshot_base64, annotated_screenshot_base64, new_screenshot_index, label_selectors, label_simplified_htmls)
     """
     if not page:
         raise RuntimeError("Browser page is not initialized")

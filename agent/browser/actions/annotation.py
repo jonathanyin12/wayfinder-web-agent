@@ -54,113 +54,195 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         if (isHiddenByAncestors(element)) {
             return false;
         }
-        
-        // Check if element has zero dimensions
-        if (rect.width === 0 || rect.height === 0) {
-            return false;
-        }
-        
-        // Check if element is outside viewport
-        if (rect.bottom < 0 || rect.right < 0 || rect.top > window.innerHeight || rect.left > window.innerWidth) {
-            return false;
-        }
-        
-        // Check if element has opacity 0
-        if (parseFloat(style.opacity) === 0) {
-            return false;
-        }
-        
-        return true;
-    }
 
-    function getElementText(element) {
-        // For inputs, return their value or placeholder
-        if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
-            if (element.value) return element.value;
-            if (element.placeholder) return element.placeholder;
-            if (element.name) return element.name;
-            return element.type || 'input';
+        // Check if element is actually clickable/interactive
+        if (style.pointerEvents === 'none') {
+            return false;
         }
+
+        // Special handling for small form elements
+        const isSmallFormElement = element.tagName.toLowerCase() === 'input' && 
+            (element.type === 'radio' || element.type === 'checkbox') &&
+            element.offsetWidth <= 1 && element.offsetHeight <= 1;
+
+        // Basic size and style checks (skip for small form elements)
+        if (!isSmallFormElement && (
+            element.offsetWidth <= 1 || element.offsetHeight <= 1 ||
+            style.visibility === 'hidden' || style.display === 'none')) {
+            return false;
+        }
+
+        // Check if element is covered by other elements
+        const elementAtPoint = document.elementFromPoint(
+            rect.left + rect.width/2,
+            rect.top + rect.height/2
+        );
         
-        // For selects, get the selected option text
-        if (element.tagName === 'SELECT') {
-            if (element.options && element.selectedIndex >= 0) {
-                return element.options[element.selectedIndex].text;
+        // For form elements, check if clicking their label or container would trigger them
+        if (element.tagName.toLowerCase() === 'input' && 
+            (element.type === 'radio' || element.type === 'checkbox')) {
+            // Consider the element visible if we hit its label or a parent with click handler
+            let currentElement = elementAtPoint;
+            while (currentElement) {
+                if (currentElement.tagName.toLowerCase() === 'label' && 
+                    currentElement.getAttribute('for') === element.id) {
+                    return true;
+                }
+                // Check if this is an ancestor that would handle the click
+                if (currentElement.contains(element)) {
+                    return true;
+                }
+                currentElement = currentElement.parentElement;
             }
-            return 'select';
         }
         
-        // For buttons and links, get their text content
-        let text = element.textContent.trim();
-        if (text) return text;
-        
-        // If no text content, try to get aria-label or title
-        if (element.getAttribute('aria-label')) return element.getAttribute('aria-label');
-        if (element.getAttribute('title')) return element.getAttribute('title');
-        if (element.getAttribute('alt')) return element.getAttribute('alt');
-        
-        // If still no text, try to get any image alt text
-        const img = element.querySelector('img');
-        if (img && img.getAttribute('alt')) return img.getAttribute('alt');
-        
-        // Last resort: return the element type
-        return element.tagName.toLowerCase();
+        // General visibility check for other elements
+        if (!elementAtPoint || 
+            (elementAtPoint !== element && 
+             !element.contains(elementAtPoint) && 
+             !elementAtPoint.contains(element))) {
+            return false;
+        }
+
+        // Check if element has meaningful dimensions
+        if (rect.width * rect.height === 0) {
+            return false;
+        }
+
+        // Viewport visibility check
+        return (
+            rect.top >= 0 &&
+            rect.left >= 0 &&
+            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+            rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+        );
     }
 
-    function getSimplifiedHTML(element) {
-        let clone = element.cloneNode(true);
-        
-        // Remove all script and style elements
-        const scripts = clone.querySelectorAll('script, style');
-        scripts.forEach(script => script.remove());
-        
-        // Get the HTML content
-        let html = clone.outerHTML;
-        
-        // Simplify the HTML by removing most attributes except key ones
-        html = html.replace(/<([a-z][a-z0-9]*)\s(?:[^>]*\s)?([^>]*)>/gi, (match, tag, attrs) => {
-            // Keep only important attributes
-            const keepAttrs = ['id', 'class', 'href', 'src', 'alt', 'title', 'value', 'placeholder', 'type', 'name', 'aria-label'];
-            let newAttrs = '';
-            
-            for (const attr of keepAttrs) {
-                const regex = new RegExp(`${attr}=["']([^"']*)["']`, 'i');
-                const match = attrs.match(regex);
-                if (match) {
-                    newAttrs += ` ${attr}="${match[1]}"`;
+    function getParentWithLabel(element) {
+        // If input has an associated label via 'for' attribute
+        if (element.id) {
+            const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+            if (associatedLabel) {
+                // Find common parent of input and label
+                let inputParent = element.parentElement;
+                while (inputParent) {
+                    if (inputParent.contains(associatedLabel)) {
+                        return inputParent;
+                    }
+                    inputParent = inputParent.parentElement;
                 }
             }
-            
-            return `<${tag}${newAttrs}>`;
-        });
-        
-        // Limit the length of the HTML
-        if (html.length > 500) {
-            html = html.substring(0, 497) + '...';
         }
         
-        return html;
+        // If input is wrapped in a label
+        let parent = element.parentElement;
+        while (parent) {
+            if (parent.tagName.toLowerCase() === 'label') {
+                return parent;
+            }
+            // Check if parent contains a label for this input
+            const childLabels = parent.getElementsByTagName('label');
+            for (const label of childLabels) {
+                if (label.getAttribute('for') === element.id || label.contains(element)) {
+                    return parent;
+                }
+            }
+            parent = parent.parentElement;
+        }
+        
+        return element; // fallback to the element itself
     }
 
-    let labelIndex = 1;
-    elements.forEach(element => {
+    let visibleIndex = 0;
+    elements.forEach((element) => {
         if (isElementVisible(element)) {
-            const text = getElementText(element);
-            const selector = getCssSelector(element);
-            const simplifiedHTML = getSimplifiedHTML(element);
-            
-            label_selectors[labelIndex] = selector;
-            label_simplified_htmls[labelIndex] = {
-                "text": text,
-                "html": simplifiedHTML,
-                "tag": element.tagName.toLowerCase(),
-                "type": element.type || ''
-            };
-            
-            labelIndex++;
+            const tagName = element.tagName.toLowerCase();
+            let simplified_html = '<' + tagName;
+            for (const attr of ['aria-label', 'alt', 'placeholder', 'value']) {
+                if (element.hasAttribute(attr)) {
+                    let attrValue = element.getAttribute(attr);
+                    simplified_html += ` ${attr}="${attrValue}"`;
+                }
+            }
+
+            // Get inner text from the element.
+            let innerText = element.textContent.replace(/\n/g, ' ').trim();
+
+            // For input elements, we need to look elsewhere for the visible label text.
+            if (tagName === 'input' && innerText === '') {
+                // 1. Try to get an associated label via the "for" attribute.
+                if (element.id) {
+                    const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+                    if (associatedLabel) {
+                        innerText = associatedLabel.textContent.replace(/\n/g, ' ').trim();
+                    }
+                }
+                // 2. Check if the input is wrapped in a <label>.
+                if (innerText === '' && element.parentElement && element.parentElement.tagName.toLowerCase() === 'label') {
+                    innerText = element.parentElement.textContent.replace(/\n/g, ' ').trim();
+                }
+                // 3. Check if a sibling <span> element holds the text.
+                if (innerText === '') {
+                    if (element.nextElementSibling && element.nextElementSibling.tagName.toLowerCase() === 'span') {
+                        innerText = element.nextElementSibling.textContent.replace(/\n/g, ' ').trim();
+                    } else if (element.previousElementSibling && element.previousElementSibling.tagName.toLowerCase() === 'span') {
+                        innerText = element.previousElementSibling.textContent.replace(/\n/g, ' ').trim();
+                    }
+                }
+                // 4. Fallback to the "value" or "placeholder" attribute.
+                if (innerText === '') {
+                    innerText = element.getAttribute('value') || element.getAttribute('placeholder') || '';
+                }
+            }
+
+            simplified_html = simplified_html + '>' + innerText + '</' + tagName + '>';
+            simplified_html = simplified_html.replace(/\s+/g, ' ').trim();
+
+            // Keep the original selector pointing to the input element
+            const cssSelector = getCssSelector(element);
+            label_selectors[visibleIndex] = cssSelector;
+            label_simplified_htmls[visibleIndex] = simplified_html;
+
+            // Only use parent for visual display
+            const targetElement = element.tagName.toLowerCase() === 'input' &&
+                (element.type === 'radio' || element.type === 'checkbox') ?
+                getParentWithLabel(element) : element;
+
+            // Draw rectangle using parent dimensions
+            const rect = targetElement.getBoundingClientRect();
+            const adjustedTop = rect.top + window.scrollY;
+            const adjustedLeft = rect.left + window.scrollX;
+
+            const newElement = document.createElement('div');
+            newElement.className = 'GWA-rect';
+            newElement.style.border = '2px solid brown';
+            newElement.style.position = 'absolute';
+            newElement.style.top = `${adjustedTop}px`;
+            newElement.style.left = `${adjustedLeft}px`;
+            newElement.style.width = `${rect.width}px`;
+            newElement.style.height = `${rect.height}px`;
+            newElement.style.zIndex = 10000;
+            newElement.style.pointerEvents = 'none';
+            document.body.appendChild(newElement);
+
+            const label = document.createElement("span");
+            label.className = "GWA-label";
+            label.textContent = visibleIndex;
+            label.style.position = "absolute";
+            label.style.lineHeight = "16px";
+            label.style.padding = "1px";
+            label.style.top = `${adjustedTop}px`;
+            label.style.left = `${adjustedLeft}px`;
+            label.style.color = "white";
+            label.style.fontWeight = "bold";
+            label.style.fontSize = "16px";
+            label.style.backgroundColor = "brown";
+            label.style.zIndex = 10000;
+            document.body.appendChild(label);
+
+            visibleIndex++;
         }
     });
-
     return [label_selectors, label_simplified_htmls];
 }"""
 
