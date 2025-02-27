@@ -109,7 +109,7 @@ class AgentBrowser:
 
         self.page = await self.context.new_page()
         await go_to_url(self.page, url)
-        await self._update_page_screenshots()
+        await self.update_browser_state()
 
         return self.context, self.page
 
@@ -186,7 +186,7 @@ class AgentBrowser:
             formatted_result = f"Performed {action.description}. Outcome unknown."
 
         # Store the current page screenshot after the action completes
-        await self._update_page_screenshots()
+        await self.update_browser_state()
 
         return formatted_result
 
@@ -247,7 +247,7 @@ Respond with a JSON object:
     # Page state management (private methods)
     # ------------------------------------------------------------------------
 
-    async def _update_page_screenshots(self) -> None:
+    async def update_browser_state(self) -> None:
         """Update the current page screenshots and annotations."""
         if not self.page:
             raise RuntimeError("Browser page is not initialized")

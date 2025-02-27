@@ -168,7 +168,7 @@ class Agent:
 
         # Create content with text and images
         user_message = self.llm_client.create_user_message_with_images(
-            planning_prompt, images, detail="high"
+            planning_prompt, images, detail="low"
         )
 
         # Prepare and send message
@@ -264,6 +264,7 @@ class Agent:
             # Remove last two messages from history on failure
             if len(self.message_history) >= 2:
                 self.message_history = self.message_history[:-2]
+            await self.browser.update_browser_state()
             return None
 
     # Human Control Methods
@@ -276,7 +277,7 @@ class Agent:
                 )
                 if user_input == "":  # Empty string means Enter was pressed
                     logger.info("Yielding control back to the agent.")
-                    await self.browser._update_page_screenshots()
+                    await self.browser.update_browser_state()
                     break
                 logger.info("Please press 'Enter' key only.")
             except KeyboardInterrupt:

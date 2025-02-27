@@ -41,10 +41,14 @@ The exact url is {url[:50] + "..." if len(url) > 50 else url}.
 The screenshot is the current state of the page.
 
 
+Here are the elements you can interact with (element_id: element_html):
+{interactable_elements}
+
+
 TASK:
 1. Provide a brief summary of key information relevant to the task from the current page.
 
-2. Reason about what is an appropriate next step given the current state of the page and the overall objective.
+2. Suggest anappropriate next step given the current state of the page and the overall objective.
 
 Respond with a JSON object with the following fields:
 {{
@@ -64,6 +68,10 @@ The first screenshot is the state of the page before the last action was perform
 The second screenshot is the current state of the page, after the last action was performed.
 
 
+Here are the elements you can interact with (element_id: element_html):
+{interactable_elements}
+
+
 TASK:
 1. Provide a brief summary of new key information relevant to the task from the current page. 
 
@@ -73,8 +81,8 @@ TASK:
 
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
-4. Reason about what is an appropriate next step given the current state of the page and the overall objective.
-- Think in terms of potential short action sequences rather than broad goals.
+4. Suggest an appropriate next step given the current state of the page and the overall objective.
+- Think in terms of potential short action sequences rather than broad goals. The actions you can take are listed under POSSIBLE ACTIONS.
 - If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
 - If the objective is complete, suggest ending the task.
 
@@ -113,4 +121,6 @@ Here are the elements you can interact with (element_id: element_html):
 TASK: 
 Choose the action that best matches the following next step:
 {next_step}
+
+The entire next step may not be achievable through a single action and may require multiple actions (e.g. scroll down first, then click on an element). If so, simply output the first action. If no currently visible elements are relevant to the next step, scrolling may be required to reveal the relevant elements.
 """
