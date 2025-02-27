@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage
@@ -101,7 +101,10 @@ class LLMClient:
         print(f"Total cost: ${total_cost:.6f}")
 
     def create_user_message_with_images(
-        self, text_content: str, images: List[str]
+        self,
+        text_content: str,
+        images: List[str],
+        detail: Optional[Union[str, List[str]]] = None,
     ) -> List[Dict[str, Any]]:
         """Helper to create a message with text and images
 
@@ -113,15 +116,25 @@ class LLMClient:
             A formatted content list ready for OpenAI API
         """
         content = [{"type": "text", "text": text_content}]
+        if detail is None:
+            details = ["high"] * len(images)
+        else:
+            # If detail is a single string, convert it to a list
+            if isinstance(detail, str):
+                details = [detail] * len(images)
+            # If detail is a list, check its length
+            elif isinstance(detail, list):
+                assert len(detail) == len(images)
+                details = detail
 
-        for image_base64 in images:
+        for image_base64, detail in zip(images, details):
             if image_base64:
                 content.append(
                     {
                         "type": "image_url",
                         "image_url": {
                             "url": f"data:image/png;base64,{image_base64}",
-                            "detail": "high",
+                            "detail": detail,
                         },
                     }
                 )

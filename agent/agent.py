@@ -48,6 +48,8 @@ class Agent:
         self.prompt_manager = PromptManager(objective)
         self.browser = AgentBrowser()
 
+        self.iteration = 0
+
     @contextlib.asynccontextmanager
     async def _timed_operation(self, description: str):
         """Context manager for timing operations"""
@@ -63,11 +65,7 @@ class Agent:
         """Launch the agent with the specified URL or default URL."""
         target_url = url or self.default_url
         await self.browser.launch(target_url, headless)
-
         await self.execute_agent_loop()
-
-    async def terminate(self) -> None:
-        """Terminate the browser session."""
         await self.browser.terminate()
 
     async def execute_agent_loop(self) -> None:
@@ -75,6 +73,7 @@ class Agent:
         logger.info(f"BEGINNING TASK: {self.objective}")
 
         while True:
+            self.iteration += 1
             # Planning phase
             async with self._timed_operation("Planning"):
                 planning_response = await self._plan_next_action()
@@ -93,11 +92,6 @@ class Agent:
                 action = await self._choose_next_action(next_step)
                 logger.info(f"Selected action: {action}")
 
-            # Check for completion
-            if action.name == "end":
-                logger.info("Completed task. Exiting...")
-                break
-
             # Execution phase
             async with self._timed_operation("Execution"):
                 outcome = await self._execute_action(action)
@@ -109,7 +103,12 @@ class Agent:
             # Print token usage
             self.llm_client.print_token_usage()
 
-            # self.llm_client.print_message_history(self.message_history)
+            # Check for completion
+            if action.name == "end":
+                logger.info(
+                    f"Completed task in {self.iteration} iterations. Exiting..."
+                )
+                break
 
     # LLM Methods
     def _append_to_history(self, role: str, content: Any) -> None:
@@ -143,7 +142,7 @@ class Agent:
 
         # Create content with text and images
         user_message = self.llm_client.create_user_message_with_images(
-            planning_prompt, images
+            planning_prompt, images, detail="low"
         )
 
         # Prepare and send message

@@ -19,12 +19,6 @@ POSSIBLE ACTIONS:
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
 - end: declare that you have completed the task
-
-
-TIPS:
-- Use scroll to find elements you are looking for
-- If none of the visible elements on the page are appropriate for the action you want to take, try to scroll down the page to see if you can find any.
-- If you are stuck, try alternative approaches, like going back to a previous page, new search, new tab etc. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING.
 """
 
     async def get_planning_prompt(
@@ -40,12 +34,9 @@ TIPS:
             return f"""CONTEXT:
 You are on a page of {site_name}. {page_position}
 
-The exact url is {url}.
+The exact url is {url[:50] + "..." if len(url) > 50 else url}.
 
 The screenshot is the current state of the page.
-
-Here are the elements you can interact with:
-{interactable_elements}
 
 
 TASK:
@@ -62,14 +53,11 @@ Respond with a JSON object with the following fields:
         return f"""CONTEXT:
 You are on a page of {site_name}. {page_position}
 
-The exact url is {url}.
+The exact url is {url[:50] + "..." if len(url) > 50 else url}.
 
 The first screenshot is the state of the page before the last action was performed.
 
 The second screenshot is the current state of the page, after the last action was performed.
-
-Here are the elements you can interact with (element_id: element_html):
-{interactable_elements}
 
 
 TASK:
@@ -105,7 +93,7 @@ Respond with a JSON object with the following fields:
         return f"""CONTEXT:
 You are on a page of {site_name}. {page_position}
 
-The exact url is {url}.
+The exact url is {url[:50] + "..." if len(url) > 50 else url}.
 
 The first screenshot is the current state of the page after the last action was performed.
 

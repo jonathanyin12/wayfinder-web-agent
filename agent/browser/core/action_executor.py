@@ -63,6 +63,8 @@ async def execute_action(
             case "go_to_url":
                 url = action.args["url"]
                 await go_to_url(page, url)
+            case "end":
+                return action.args["reason"]
             case _:
                 logger.warning(f"Unknown action: {action.name}")
     except Exception as e:
