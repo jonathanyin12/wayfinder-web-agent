@@ -5,10 +5,12 @@ from typing import Any, List
 @dataclass
 class AgentAction:
     name: str
-    description: str = None
+    html_element: str = ""
     args: List[Any] = None
     id: str = None
 
     def __post_init__(self):
         if self.args is None:
             self.args = []
+
+        self.description = f"{self.name}{f' {self.html_element}' if self.html_element else ''}, args: {self.args}"

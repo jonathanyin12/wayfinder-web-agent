@@ -5,10 +5,11 @@ Extract actions for retrieving information from web pages.
 import json
 
 import markdownify
-from openai import AsyncOpenAI
 from playwright.async_api import Page
 
-client = AsyncOpenAI()
+from agent.llm.client import LLMClient
+
+client = LLMClient()
 
 
 async def extract_page_information(page: Page, objective: str) -> str:
@@ -38,10 +39,9 @@ Respond in JSON format as follows:
 Here is the page content in markdown format:
 {markdown_content}
 """
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
+    response = await client.make_call(
+        [{"role": "user", "content": prompt}],
+        "gpt-4o",
     )
     response_json = json.loads(response.choices[0].message.content)
     return response_json["information"]

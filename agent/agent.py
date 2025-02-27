@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import json
 import logging
@@ -74,17 +75,33 @@ class Agent:
 
         while True:
             self.iteration += 1
-            # Planning phase
-            async with self._timed_operation("Planning"):
-                planning_response = await self._plan_next_action()
-                logger.info(json.dumps(planning_response, indent=4))
 
-            # Check for captcha
-            page_description = planning_response["page_summary"]
-            if await self._detect_captcha(page_description):
+            # Run captcha check and planning concurrently
+            captcha_task = asyncio.create_task(self._check_for_captcha())
+            planning_task = asyncio.create_task(self._plan_next_action_with_timing())
+
+            # Wait for captcha check to complete first
+            captcha_detected = await captcha_task
+            if captcha_detected:
+                # Cancel planning task if still running
+                if not planning_task.done():
+                    planning_task.cancel()
+                    try:
+                        await planning_task  # Allow cancellation to process
+                    except asyncio.CancelledError:
+                        pass  # Ignore the cancellation error
+
                 logger.info("Captcha detected. Yielding control to human.")
                 await self._wait_for_human_input()
                 continue
+
+            # If no captcha, wait for planning to complete
+            planning_response = await planning_task
+
+            # Format the response for history
+            formatted_response = self._format_planning_response(planning_response)
+            self._append_to_history("user", formatted_response)
+            logger.info(json.dumps(planning_response, indent=4))
 
             # Action selection phase
             next_step = planning_response["next_step"]
@@ -120,6 +137,17 @@ class Agent:
             }
         )
 
+    # Helper methods
+    async def _check_for_captcha(self) -> bool:
+        """Check for captcha with timing."""
+        async with self._timed_operation("Captcha check"):
+            return await self.browser.check_for_captcha()
+
+    async def _plan_next_action_with_timing(self) -> Dict[str, Any]:
+        """Plan next action with timing."""
+        async with self._timed_operation("Planning"):
+            return await self._plan_next_action()
+
     # Main Methods
     async def _plan_next_action(self) -> Dict[str, Any]:
         """Evaluate the current page and plan the next action"""
@@ -129,9 +157,7 @@ class Agent:
             await self.browser.get_formatted_page_position(),
             self.browser.page.url,
             await self.browser.get_formatted_interactable_elements(),
-            last_action_description=self.action_history[-1].description
-            if self.action_history
-            else None,
+            last_action=self.action_history[-1] if self.action_history else None,
         )
 
         # Prepare images
@@ -142,7 +168,7 @@ class Agent:
 
         # Create content with text and images
         user_message = self.llm_client.create_user_message_with_images(
-            planning_prompt, images, detail="low"
+            planning_prompt, images, detail="high"
         )
 
         # Prepare and send message
@@ -151,11 +177,6 @@ class Agent:
         try:
             response = await self.llm_client.make_call(messages, self.planning_model)
             response_json = json.loads(response)
-
-            # Format the response for history
-            formatted_response = self._format_planning_response(response_json)
-            self._append_to_history("user", formatted_response)
-
             return response_json
         except Exception as e:
             logger.error(f"Error in planning: {str(e)}")
@@ -214,7 +235,12 @@ class Agent:
         args = json.loads(tool_call.function.arguments)
 
         action = AgentAction(
-            name=function_name, description=next_step, args=args, id=tool_call.id
+            name=function_name,
+            html_element=self.browser.label_simplified_htmls.get(
+                args.get("element_id", -1)
+            ),
+            args=args,
+            id=tool_call.id,
         )
         self.action_history.append(action)
         return action
@@ -250,13 +276,10 @@ class Agent:
                 )
                 if user_input == "":  # Empty string means Enter was pressed
                     logger.info("Yielding control back to the agent.")
+                    await self.browser._update_page_screenshots()
                     break
                 logger.info("Please press 'Enter' key only.")
             except KeyboardInterrupt:
                 logger.info("Interrupted by user. Terminating...")
                 await self.terminate()
                 break
-
-    async def _detect_captcha(self, page_description: str) -> bool:
-        """Detect if a captcha is present on the page"""
-        return "captcha" in page_description.lower()

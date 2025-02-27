@@ -255,9 +255,15 @@ async def annotate_page(page: Page) -> Tuple[Dict[int, str], Dict[int, str]]:
         page: The Playwright page
 
     Returns:
-        A tuple containing (label_selectors, label_simplified_htmls)
+        A tuple containing (label_selectors, label_simplified_htmls) with integer keys
     """
-    return await page.evaluate(ANNOTATE_PAGE_TEMPLATE)
+    selectors_dict, html_dict = await page.evaluate(ANNOTATE_PAGE_TEMPLATE)
+
+    # Convert string keys to integers
+    label_selectors = {int(k): v for k, v in selectors_dict.items()}
+    label_simplified_htmls = {int(k): v for k, v in html_dict.items()}
+
+    return label_selectors, label_simplified_htmls
 
 
 CLEAR_PAGE_TEMPLATE = """() => {

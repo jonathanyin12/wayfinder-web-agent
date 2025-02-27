@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from agent.models import AgentAction
+
 
 class PromptManager:
     def __init__(self, objective: str):
@@ -27,10 +29,10 @@ POSSIBLE ACTIONS:
         page_position: str,
         url: str,
         interactable_elements: str,
-        last_action_description: str = None,
+        last_action: AgentAction | None = None,
     ) -> str:
         """Returns the prompt template for planning the next action"""
-        if not last_action_description:
+        if not last_action:
             return f"""CONTEXT:
 You are on a page of {site_name}. {page_position}
 
@@ -40,7 +42,7 @@ The screenshot is the current state of the page.
 
 
 TASK:
-1. Provide a detailed summary of key information relevant to the task from the current page.
+1. Provide a brief summary of key information relevant to the task from the current page.
 
 2. Reason about what is an appropriate next step given the current state of the page and the overall objective.
 
@@ -55,21 +57,25 @@ You are on a page of {site_name}. {page_position}
 
 The exact url is {url[:50] + "..." if len(url) > 50 else url}.
 
+The last action you performed was: {last_action.description}
+
 The first screenshot is the state of the page before the last action was performed.
 
 The second screenshot is the current state of the page, after the last action was performed.
 
 
 TASK:
-1. Provide a detailed summary of key information relevant to the task from the current page which is not yet in the task history memory.
+1. Provide a brief summary of new key information relevant to the task from the current page. 
 
-2. Reason about whether the previous action ("{last_action_description}") was successful or not. Carefully compare the before and after screenshots to verify whether the action was successful. Consider what UX changes are expected for the action you took.
+2. Reason about whether the last action was successful or not.
+- Carefully compare the before and after screenshots to verify whether the action was successful. Consider what UX changes are expected for the action you took.
+- If an action is not successful, try to reason about what went wrong and what you can do differently. e.g. if you clicked on an element but it didn't change state, it may have already been selected or in the desired state. If you tried to scroll but the page didn't move, it may be the end of the page or the page is not scrollable.
 
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
-4. Reason about what is an appropriate next step given the current state of the page and the overall objective. 
+4. Reason about what is an appropriate next step given the current state of the page and the overall objective.
+- Think in terms of potential short action sequences rather than broad goals.
 - If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
-- This must be achievable in a single action, so avoid something that require multiple actions like first scrolling then clicking.
 - If the objective is complete, suggest ending the task.
 
 Respond with a JSON object with the following fields:

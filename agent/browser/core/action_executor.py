@@ -40,13 +40,13 @@ async def execute_action(
         match action.name:
             case "click_element":
                 element_id = action.args["element_id"]
-                label_selector = label_selectors[str(element_id)]
+                label_selector = label_selectors[element_id]
                 await click_element(page, label_selector)
             case "type_text":
                 element_id = action.args["element_id"]
                 text = action.args["text"]
                 submit = action.args["submit"]
-                label_selector = label_selectors[str(element_id)]
+                label_selector = label_selectors[element_id]
                 await type_text(page, label_selector, text, submit)
             case "extract_info":
                 objective = action.args["objective"]

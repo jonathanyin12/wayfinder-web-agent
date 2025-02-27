@@ -5,6 +5,7 @@ This module provides the main AgentBrowser class that handles browser initializa
 page navigation, and interaction with web elements through various actions.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
@@ -16,6 +17,8 @@ from playwright.async_api import (
     Playwright,
     async_playwright,
 )
+
+from agent.llm.client import LLMClient
 
 from ...models import AgentAction
 from ..actions.annotation import clear_annotations
@@ -70,6 +73,8 @@ class AgentBrowser:
             "take_element_screenshot": take_element_screenshot,
             "clear_annotations": clear_annotations,
         }
+
+        self.llm_client = LLMClient()
 
     # Browser lifecycle methods
     # ------------------------------------------------------------------------
@@ -158,7 +163,7 @@ class AgentBrowser:
     # Action execution
     # ------------------------------------------------------------------------
 
-    async def execute_action(self, action: AgentAction) -> None:
+    async def execute_action(self, action: AgentAction) -> str:
         """
         Execute an agent action on the browser.
 
@@ -176,9 +181,9 @@ class AgentBrowser:
         # Execute the action
         result = await execute_action(self.page, action, self.label_selectors)
         if result:
-            formatted_result = f"Performed {action.name}. Result: {result}"
+            formatted_result = f"Performed {action.description}. Result: {result}"
         else:
-            formatted_result = f"Performed {action.name}. Outcome unknown."
+            formatted_result = f"Performed {action.description}. Outcome unknown."
 
         # Store the current page screenshot after the action completes
         await self._update_page_screenshots()
@@ -200,6 +205,44 @@ class AgentBrowser:
 
         base_url = get_base_url(self.page.url)
         return base_url.replace("www.", "")
+
+    async def check_for_captcha(self) -> bool:
+        """
+        Detect if a captcha is present on the page using LLM analysis.
+
+        Returns:
+            bool: True if a captcha is detected, False otherwise
+        """
+        if not self.page:
+            raise RuntimeError("Browser page is not initialized")
+
+        # Use the current screenshot to check for captcha
+
+        # Create a prompt to detect captcha
+        captcha_prompt = """Analyze this screenshot and determine if it contains a CAPTCHA challenge.
+Look for:
+- Visual puzzles or challenges
+- Text asking to verify you're human
+- Checkboxes for "I'm not a robot"
+- Image selection challenges
+
+Respond with a JSON object:
+{
+    "reasoning": "brief explanation of why you think this is or isn't a captcha",
+    "is_captcha": true/false,
+}
+"""
+        # Create message with image
+        user_message = self.llm_client.create_user_message_with_images(
+            captcha_prompt, [self.current_page_screenshot_base64]
+        )
+
+        # Make the LLM call with gpt-4o-mini
+        response = await self.llm_client.make_call([user_message], "gpt-4o-mini")
+        response_json = json.loads(response)
+
+        # Return the captcha detection result
+        return response_json.get("is_captcha", False)
 
     # Page state management (private methods)
     # ------------------------------------------------------------------------
