@@ -8,7 +8,7 @@ page navigation, and interaction with web elements through various actions.
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from playwright.async_api import (
     Browser,
@@ -18,20 +18,9 @@ from playwright.async_api import (
     async_playwright,
 )
 
+from agent.browser.core.page import AgentBrowserPage
 from agent.llm.client import LLMClient
-
-from ...models import AgentAction
-from ..actions.annotation import clear_annotations
-from ..actions.navigation import go_to_url
-from ..actions.screenshot import take_element_screenshot, take_screenshot
-from ..actions.scroll import get_pixels_above_below
-from ..utils.page_info import (
-    get_formatted_interactable_elements,
-    get_formatted_page_position,
-)
-from ..utils.url import get_base_url
-from .action_executor import execute_action
-from .page_state import update_page_screenshots
+from agent.models import AgentAction
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -52,29 +41,15 @@ class AgentBrowser:
         self.playwright: Optional[Playwright] = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
 
-        # Page state
-        self.previous_page_url: str = ""
-        self.previous_page_screenshot_base64: str = ""
-        self.current_page_screenshot_base64: str = ""
-        self.current_annotated_page_screenshot_base64: str = ""
-        self.label_selectors: Dict[str, str] = {}
-        self.label_simplified_htmls: Dict[str, Dict] = {}
+        self.current_page_index = 0
+        self.pages: List[AgentBrowserPage] = []
+
+        self.llm_client = LLMClient()
 
         # Screenshot configuration
         self.screenshot_index = 0
         self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
-
-        # Map method names to their implementations for dynamic dispatch
-        self._method_map = {
-            "get_pixels_above_below": get_pixels_above_below,
-            "take_screenshot": take_screenshot,
-            "take_element_screenshot": take_element_screenshot,
-            "clear_annotations": clear_annotations,
-        }
-
-        self.llm_client = LLMClient()
 
     # Browser lifecycle methods
     # ------------------------------------------------------------------------
@@ -107,11 +82,7 @@ class AgentBrowser:
             viewport={"width": 1280, "height": 1000},
         )
 
-        self.page = await self.context.new_page()
-        await go_to_url(self.page, url)
-        await self.update_browser_state()
-
-        return self.context, self.page
+        await self.create_new_page(url)
 
     async def terminate(self):
         """Close browser and playwright resources."""
@@ -120,45 +91,15 @@ class AgentBrowser:
         if self.playwright:
             await self.playwright.stop()
 
-    # Dynamic method resolution
-    # ------------------------------------------------------------------------
+    async def create_new_page(self, url: str):
+        """Create a new page in the browser."""
+        page = await self.context.new_page()
+        browser_page = AgentBrowserPage(page, self.llm_client)
+        self.pages.append(browser_page)
+        self.current_page_index = len(self.pages) - 1
 
-    def __getattr__(self, name: str) -> Any:
-        """
-        Dynamic method resolution for browser actions.
-
-        This allows calling action methods directly on the AgentBrowser instance.
-
-        Args:
-            name: The name of the method to call
-
-        Returns:
-            A wrapper function that calls the appropriate action method
-
-        Raises:
-            AttributeError: If the method name is not in the method map
-        """
-        if name in self._method_map:
-            method = self._method_map[name]
-
-            # Return an async wrapper that automatically passes self.page and screenshot_path for screenshot methods
-            async def wrapper(*args: Any, **kwargs: Any) -> Any:
-                if not self.page:
-                    raise RuntimeError("Browser page is not initialized")
-
-                if name in ["take_screenshot", "take_element_screenshot"]:
-                    save_path = f"{self.screenshot_folder}/screenshot_{self.screenshot_index}.png"
-                    self.screenshot_index += 1
-                    base64_screenshot = await method(
-                        self.page, *args, save_path=save_path, **kwargs
-                    )
-                    return base64_screenshot
-                return await method(self.page, *args, **kwargs)
-
-            return wrapper
-        raise AttributeError(
-            f"'{self.__class__.__name__}' object has no attribute '{name}'"
-        )
+        await browser_page.go_to_url(url)
+        await browser_page.update_page_state()
 
     # Action execution
     # ------------------------------------------------------------------------
@@ -169,126 +110,61 @@ class AgentBrowser:
 
         Args:
             action: The agent action to execute
+
+        Returns:
+            A string representation of the action result
         """
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
+        if not self.pages:
+            raise RuntimeError("Browser has no pages initialized")
 
-        # Save the previous page URL and screenshot before executing the action
-        self.previous_page_url = self.page.url
-        self.previous_page_screenshot_base64 = self.current_page_screenshot_base64
-        await self.clear_annotations()
+        if action.name == "end":
+            result = action.args["reason"]
+        elif action.name == "switch_tab":
+            await self.switch_tab(action.args["tab_index"])
+        else:
+            current_page = self.pages[self.current_page_index]
 
-        # Execute the action
-        result = await execute_action(self.page, action, self.label_selectors)
+            result = await getattr(current_page, action.name)(**action.args)
+
         if result:
             formatted_result = f"Performed {action.description}. Result: {result}"
         else:
             formatted_result = f"Performed {action.description}. Outcome unknown."
 
-        # Store the current page screenshot after the action completes
-        await self.update_browser_state()
+        # Update the browser state after the action completes
+        current_page = self.pages[self.current_page_index]
+
+        await current_page.update_page_state()
 
         return formatted_result
-
-    # Page information methods
-    # ------------------------------------------------------------------------
-
-    def get_site_name(self) -> str:
-        """
-        Get the base site name from the current URL.
-
-        Returns:
-            The base domain name without 'www.'
-        """
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
-
-        base_url = get_base_url(self.page.url)
-        return base_url.replace("www.", "")
-
-    async def check_for_captcha(self) -> bool:
-        """
-        Detect if a captcha is present on the page using LLM analysis.
-
-        Returns:
-            bool: True if a captcha is detected, False otherwise
-        """
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
-
-        # Use the current screenshot to check for captcha
-
-        # Create a prompt to detect captcha
-        captcha_prompt = """Analyze this screenshot and determine if it contains a CAPTCHA challenge.
-Look for:
-- Visual puzzles or challenges
-- Text asking to verify you're human
-- Checkboxes for "I'm not a robot"
-- Image selection challenges
-
-Respond with a JSON object:
-{
-    "reasoning": "brief explanation of why you think this is or isn't a captcha",
-    "is_captcha": true/false,
-}
-"""
-        # Create message with image
-        user_message = self.llm_client.create_user_message_with_images(
-            captcha_prompt, [self.current_page_screenshot_base64]
-        )
-
-        # Make the LLM call with gpt-4o-mini
-        response = await self.llm_client.make_call([user_message], "gpt-4o-mini")
-        response_json = json.loads(response)
-
-        # Return the captcha detection result
-        return response_json.get("is_captcha", False)
 
     # Page state management (private methods)
     # ------------------------------------------------------------------------
 
-    async def update_browser_state(self) -> None:
-        """Update the current page screenshots and annotations."""
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
-
-        result = await update_page_screenshots(
-            self.page, self.screenshot_folder, self.screenshot_index
-        )
-
-        self.current_page_screenshot_base64 = result[0]
-        self.current_annotated_page_screenshot_base64 = result[1]
-        self.screenshot_index = result[2]
-        self.label_selectors = result[3]
-        self.label_simplified_htmls = result[4]
-
-    # Formatting methods for agent communication
-    # ------------------------------------------------------------------------
-
-    async def get_formatted_interactable_elements(self) -> str:
+    async def switch_tab(self, tab_index: int):
         """
-        Get a formatted string of interactable elements on the page.
+        Switch to a specific browser tab by index.
 
-        Returns:
-            A formatted string representation of interactable elements
+        Args:
+            tab_index: The index of the tab to switch to (0-based)
         """
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
+        pages = await self.context.pages()
 
-        pixels_above_below = await self.get_pixels_above_below()
-        return await get_formatted_interactable_elements(
-            self.label_simplified_htmls, pixels_above_below
-        )
+        if 0 <= tab_index < len(pages):
+            target_page = pages[tab_index]
+            self.current_page_index = tab_index
+            await target_page.bring_to_front()
+        else:
+            raise IndexError(
+                f"Tab index {tab_index} out of range. Available tabs: {len(pages)}"
+            )
 
-    async def get_formatted_page_position(self) -> str:
-        """
-        Get a formatted string describing the current scroll position.
+    async def check_for_captcha(self) -> bool:
+        """Check if a captcha is present on the current page."""
+        current_page = self.pages[self.current_page_index]
+        return await current_page.check_for_captcha()
 
-        Returns:
-            A human-readable description of the current scroll position
-        """
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
-
-        pixels_above_below = await self.get_pixels_above_below()
-        return await get_formatted_page_position(pixels_above_below)
+    async def update_page_state(self):
+        """Update the page state for all pages."""
+        current_page = self.pages[self.current_page_index]
+        await current_page.update_page_state()

@@ -4,6 +4,8 @@ Interaction actions for clicking and hovering over elements.
 
 from playwright.async_api import Page
 
+from agent.browser.core.page import browser_action
+
 
 async def hover_element(page: Page, selector: str):
     """
@@ -16,6 +18,7 @@ async def hover_element(page: Page, selector: str):
     await page.hover(selector)
 
 
+@browser_action
 async def click_element(page: Page, selector: str):
     """
     Click an element on the page, with fallback to force click if normal click fails.

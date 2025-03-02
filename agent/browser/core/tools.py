@@ -1,77 +1,3 @@
-"""
-Functions for executing agent actions on the browser.
-"""
-
-import logging
-from typing import Dict
-
-from playwright.async_api import Page
-
-from ...models import AgentAction
-from ..actions.extract import extract_page_information
-from ..actions.input import type_text
-from ..actions.interaction import click_element
-from ..actions.navigation import go_back, go_forward, go_to_url
-from ..actions.scroll import scroll_down, scroll_up
-
-# Set up logging
-logger = logging.getLogger(__name__)
-
-
-async def execute_action(
-    page: Page, action: AgentAction, label_selectors: Dict[str, str]
-) -> None:
-    """
-    Execute an agent action on the browser.
-
-    Args:
-        page: The Playwright page
-        action: The agent action to execute
-        label_selectors: Dictionary mapping labels to CSS selectors
-
-    Raises:
-        RuntimeError: If the browser page is not initialized
-        Exception: If there's an error executing the action
-    """
-    if not page:
-        raise RuntimeError("Browser page is not initialized")
-
-    try:
-        match action.name:
-            case "click_element":
-                element_id = action.args["element_id"]
-                label_selector = label_selectors[element_id]
-                await click_element(page, label_selector)
-            case "type_text":
-                element_id = action.args["element_id"]
-                text = action.args["text"]
-                submit = action.args["submit"]
-                label_selector = label_selectors[element_id]
-                await type_text(page, label_selector, text, submit)
-            case "extract_info":
-                objective = action.args["objective"]
-                return await extract_page_information(page, objective)
-            case "scroll":
-                direction = action.args["direction"]
-                if direction == "down":
-                    await scroll_down(page)
-                else:
-                    await scroll_up(page)
-            case "navigate":
-                direction = action.args["direction"]
-                await go_back(page) if direction == "back" else await go_forward(page)
-            case "go_to_url":
-                url = action.args["url"]
-                await go_to_url(page, url)
-            case "end":
-                return action.args["reason"]
-            case _:
-                logger.warning(f"Unknown action: {action.name}")
-    except Exception as e:
-        logger.error(f"Error executing action {action.name}: {e}")
-        raise
-
-
 TOOLS = [
     {
         "type": "function",
@@ -192,6 +118,25 @@ TOOLS = [
                     }
                 },
                 "required": ["url"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "switch_tab",
+            "description": "Switch to a different browser tab by index.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tab_index": {
+                        "type": "number",
+                        "description": "The index of the tab to switch to (0-based).",
+                    }
+                },
+                "required": ["tab_index"],
                 "additionalProperties": False,
             },
             "strict": True,

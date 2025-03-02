@@ -9,7 +9,9 @@ from typing import Optional
 from playwright.async_api import Page
 
 
-async def take_screenshot(page: Page, save_path: str, full_page: bool = False) -> str:
+async def take_screenshot(
+    page: Page, save_path: Optional[str] = None, full_page: bool = False
+) -> str:
     """
     Take a screenshot of the current page.
 
@@ -21,7 +23,8 @@ async def take_screenshot(page: Page, save_path: str, full_page: bool = False) -
     Returns:
         Base64-encoded string of the screenshot
     """
-    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+    if save_path:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
     screenshot = await page.screenshot(full_page=full_page, path=save_path)
     return base64.b64encode(screenshot).decode("utf-8")
 

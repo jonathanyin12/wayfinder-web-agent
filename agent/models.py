@@ -14,3 +14,14 @@ class AgentAction:
             self.args = []
 
         self.description = f"{self.name}{f' {self.html_element}' if self.html_element else ''}, args: {self.args}"
+
+
+@dataclass
+class BrowserTab:
+    index: int
+    title: str
+    url: str
+    is_focused: bool
+
+    # def __str__(self):
+    #     return f"Tab(index={self.index}, title={self.title}, url={self.url}, is_focused={self.is_focused})"
