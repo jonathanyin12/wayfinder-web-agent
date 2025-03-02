@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from agent.llm.client import LLMClient
 from agent.models import AgentAction, BrowserTab
@@ -42,20 +42,22 @@ POSSIBLE ACTIONS:
         base_url = page.get_base_url()
         shortened_url = page.get_shortened_url()
         tabs = await get_formatted_tabs(browser)
+        page_title = await page.page.title()
+
         """Returns the prompt template for planning the next action"""
         if not last_action:
-            return f"""CONTEXT:
-You are on a page of {base_url}. {page_position}
-
-The exact url is {shortened_url}.
-
-The screenshot is the current state of the page.
-
-Available tabs:
+            return f"""OPEN BROWSER TABS:
 {tabs}
 
+CURRENT PAGE STATE:
+- Page title: {page_title}
+- Site: {base_url}
+- URL: {shortened_url}
+- Page Position: {page_position}
 
-Here are the elements you can interact with (element_id: element_html):
+Screenshot: current state of the page 
+
+Interactable elements that are currently visible (element_id: element_html):
 {interactable_elements}
 
 
@@ -68,25 +70,21 @@ Respond with a JSON object with the following fields:
 {{
     "page_summary": <Task 1>,
     "next_step": <Task 2>
-}}
-"""
-        return f"""CONTEXT:
-You are on a page of {base_url}. {page_position}
-
-The exact url is {shortened_url}.
-
-The last action you performed was: {last_action.description}
-
-The first screenshot is the state of the page before the last action was performed.
-
-The second screenshot is the current state of the page, after the last action was performed.
-
-
-Here are the available tabs:
+}}"""
+        return f"""OPEN BROWSER TABS:
 {tabs}
 
+CURRENT PAGE STATE:
+- Page title: {page_title}
+- Site: {base_url}
+- URL: {shortened_url}
+- Page Position: {page_position}
 
-Here are the elements you can interact with (element_id: element_html):
+Screenshot 1: previous state of the page, before the last action was performed
+
+Screenshot 2: current state of the page, after the last action was performed
+
+Interactable elements that are currently visible (element_id: element_html):
 {interactable_elements}
 
 
@@ -110,13 +108,12 @@ Respond with a JSON object with the following fields:
     "previous_action_evaluation": <Task 2>,
     "progress": <Task 3>,
     "next_step": <Task 4>
-}}
-"""
+}}"""
 
     async def _get_action_prompt(
         self,
         browser,
-        next_step: Dict[str, Any],
+        planning_response: Dict[str, str],
     ) -> str:
         """Returns the prompt template for planning the next action"""
         page = browser.pages[browser.current_page_index]
@@ -127,30 +124,44 @@ Respond with a JSON object with the following fields:
         )
         base_url = page.get_base_url()
         shortened_url = page.get_shortened_url()
+        page_title = await page.page.title()
         tabs = await get_formatted_tabs(browser)
-        return f"""CONTEXT:
-You are on a page of {base_url}. {page_position}
+        next_step = planning_response["next_step"]
+        page_summary = planning_response["page_summary"]
+        progress = planning_response.get(
+            "progress", "You have not yet started the task."
+        )
 
-The exact url is {shortened_url}.
-
-The first screenshot is the current state of the page after the last action was performed.
-
-The second screenshot is the current page annotated with bounding boxes drawn around elements you can interact with. At the top left of the bounding box is a number that corresponds to the id of the element. Each id is associated with the simplified html of the element.
-
-
-Here are the elements you can interact with (element_id: element_html):
-{interactable_elements}
-
-
-Here are the available tabs:
+        return f"""OPEN BROWSER TABS:
 {tabs}
 
+CURRENT PAGE STATE:
+- Page Summary: {page_summary}
+- Page title: {page_title}
+- Site: {base_url}
+- URL: {shortened_url}
+- Page Position: {page_position}
 
-TASK: 
-Choose the action that best matches the following next step:
+Screenshot 1: current state of the page 
+
+Screenshot 2: the current page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
+
+Interactable elements that are currently visible (element_id: element_html):
+{interactable_elements}
+
+PROGRESS:
+{progress}
+
+REQUESTED NEXT STEP:
 {next_step}
 
-The entire next step may not be achievable through a single action and may require multiple actions (e.g. scroll down first, then click on an element). If so, simply output the first action. If no currently visible elements are relevant to the next step, scrolling may be required to reveal the relevant elements.
+
+TASK:
+Select a single action that best progresses or completes the requested next step
+
+Important Notes:
+- If the next step requires multiple actions, choose only the first necessary action
+- If you want to click on or type into an element that likely exists on the current page but is not currently visible, try to find it by scrolling
 """
 
     async def build_planning_message(
@@ -174,9 +185,9 @@ The entire next step may not be achievable through a single action and may requi
     async def build_action_message(
         self,
         browser,
-        next_step: Dict[str, Any],
+        planning_response: Dict[str, str],
     ) -> str:
-        action_prompt = await self._get_action_prompt(browser, next_step)
+        action_prompt = await self._get_action_prompt(browser, planning_response)
 
         page = browser.pages[browser.current_page_index]
         images = [

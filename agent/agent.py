@@ -72,7 +72,7 @@ class Agent:
         """Main agent loop: observe, plan, and execute actions."""
         logger.info(f"BEGINNING TASK: {self.objective}")
 
-        while True:
+        while self.iteration < 50:
             self.iteration += 1
 
             # Run captcha check and planning concurrently
@@ -97,15 +97,11 @@ class Agent:
             # If no captcha, wait for planning to complete
             planning_response = await planning_task
 
-            # Format the response for history
-            formatted_response = self._format_planning_response(planning_response)
-            self.message_history.append({"role": "user", "content": formatted_response})
-            logger.info(json.dumps(planning_response, indent=4))
+            self._add_plan_to_message_history(planning_response)
 
             # Action selection phase
-            next_step = planning_response["next_step"]
             async with self._timed_operation("Choosing action"):
-                action = await self._choose_next_action(next_step)
+                action = await self._choose_next_action(planning_response)
                 logger.info(f"Selected action: {action}")
 
             # Execution phase
@@ -121,12 +117,16 @@ class Agent:
 
             # Check for completion
             if action.name == "end":
-                logger.info(
-                    f"Completed task in {self.iteration} iterations. Exiting..."
-                )
-                if action.args["final_response"]:
-                    logger.info(f"Final result: {action.args['final_response']}")
                 break
+
+        if self.iteration >= 50:
+            logger.info("Max iterations reached. Exiting...")
+        else:
+            logger.info(f"Completed task in {self.iteration} iterations.")
+            self.llm_client.print_message_history(self.message_history)
+
+            if action.args["final_response"]:
+                logger.info(f"Final result: {action.args['final_response']}")
 
     # Helper methods
     async def _check_for_captcha(self) -> bool:
@@ -160,7 +160,7 @@ class Agent:
             # Return a minimal valid response to avoid crashing
             return {"page_summary": "Error in planning", "next_step": "Retry"}
 
-    def _format_planning_response(self, response_json: Dict[str, Any]) -> str:
+    def _add_plan_to_message_history(self, response_json: Dict[str, Any]) -> str:
         """Format the planning response for history"""
         parts = [f"Page summary: {response_json['page_summary']}"]
 
@@ -174,7 +174,10 @@ class Agent:
 
         parts.append(f"Next step: {response_json['next_step']}")
 
-        return "\n\n".join(parts)
+        formatted_response = "\n\n".join(parts)
+        print(formatted_response)
+        # Add the formatted planning response to message history
+        self.message_history.append({"role": "user", "content": formatted_response})
 
     async def _choose_next_action(self, next_step: str) -> AgentAction:
         """Choose the next action to take"""
