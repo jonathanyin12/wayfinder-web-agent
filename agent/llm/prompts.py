@@ -1,11 +1,14 @@
-from typing import Any, Dict
+import json
+from typing import Any, Dict, List
 
-from agent.models import AgentAction
+from agent.llm.client import LLMClient
+from agent.models import AgentAction, BrowserTab
 
 
 class PromptManager:
-    def __init__(self, objective: str):
+    def __init__(self, objective: str, llm_client: LLMClient):
         self.objective = objective
+        self.llm_client = llm_client
 
     def get_system_prompt(self) -> str:
         """Returns the system prompt for the agent"""
@@ -20,25 +23,36 @@ POSSIBLE ACTIONS:
 - scroll: scroll up or down on the page
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
+- switch_tab: switch to a different tab
 - end: declare that you have completed the task
 """
 
-    async def get_planning_prompt(
+    async def _get_planning_prompt(
         self,
-        site_name: str,
-        page_position: str,
-        url: str,
-        interactable_elements: str,
+        browser,
         last_action: AgentAction | None = None,
     ) -> str:
+        page = browser.pages[browser.current_page_index]
+
+        pixels_above, pixels_below = await page.get_pixels_above_below()
+        page_position = get_formatted_page_position(pixels_above, pixels_below)
+        interactable_elements = get_formatted_interactable_elements(
+            pixels_above, pixels_below, page.label_simplified_htmls
+        )
+        base_url = page.get_base_url()
+        shortened_url = page.get_shortened_url()
+        tabs = await get_formatted_tabs(browser)
         """Returns the prompt template for planning the next action"""
         if not last_action:
             return f"""CONTEXT:
-You are on a page of {site_name}. {page_position}
+You are on a page of {base_url}. {page_position}
 
-The exact url is {url[:50] + "..." if len(url) > 50 else url}.
+The exact url is {shortened_url}.
 
 The screenshot is the current state of the page.
+
+Available tabs:
+{tabs}
 
 
 Here are the elements you can interact with (element_id: element_html):
@@ -57,15 +71,19 @@ Respond with a JSON object with the following fields:
 }}
 """
         return f"""CONTEXT:
-You are on a page of {site_name}. {page_position}
+You are on a page of {base_url}. {page_position}
 
-The exact url is {url[:50] + "..." if len(url) > 50 else url}.
+The exact url is {shortened_url}.
 
 The last action you performed was: {last_action.description}
 
 The first screenshot is the state of the page before the last action was performed.
 
 The second screenshot is the current state of the page, after the last action was performed.
+
+
+Here are the available tabs:
+{tabs}
 
 
 Here are the elements you can interact with (element_id: element_html):
@@ -95,19 +113,25 @@ Respond with a JSON object with the following fields:
 }}
 """
 
-    async def get_action_prompt(
+    async def _get_action_prompt(
         self,
-        site_name: str,
-        page_position: str,
-        url: str,
-        interactable_elements: str,
+        browser,
         next_step: Dict[str, Any],
     ) -> str:
         """Returns the prompt template for planning the next action"""
+        page = browser.pages[browser.current_page_index]
+        pixels_above, pixels_below = await page.get_pixels_above_below()
+        page_position = get_formatted_page_position(pixels_above, pixels_below)
+        interactable_elements = get_formatted_interactable_elements(
+            pixels_above, pixels_below, page.label_simplified_htmls
+        )
+        base_url = page.get_base_url()
+        shortened_url = page.get_shortened_url()
+        tabs = await get_formatted_tabs(browser)
         return f"""CONTEXT:
-You are on a page of {site_name}. {page_position}
+You are on a page of {base_url}. {page_position}
 
-The exact url is {url[:50] + "..." if len(url) > 50 else url}.
+The exact url is {shortened_url}.
 
 The first screenshot is the current state of the page after the last action was performed.
 
@@ -118,9 +142,124 @@ Here are the elements you can interact with (element_id: element_html):
 {interactable_elements}
 
 
+Here are the available tabs:
+{tabs}
+
+
 TASK: 
 Choose the action that best matches the following next step:
 {next_step}
 
 The entire next step may not be achievable through a single action and may require multiple actions (e.g. scroll down first, then click on an element). If so, simply output the first action. If no currently visible elements are relevant to the next step, scrolling may be required to reveal the relevant elements.
 """
+
+    async def build_planning_message(
+        self,
+        browser,
+        last_action: AgentAction | None = None,
+    ) -> str:
+        planning_prompt = await self._get_planning_prompt(browser, last_action)
+
+        page = browser.pages[browser.current_page_index]
+        images = [
+            page.previous_screenshot_base64,
+            page.current_screenshot_base64,
+        ]
+
+        user_message = self.llm_client.create_user_message_with_images(
+            planning_prompt, images, detail="low"
+        )
+        return user_message
+
+    async def build_action_message(
+        self,
+        browser,
+        next_step: Dict[str, Any],
+    ) -> str:
+        action_prompt = await self._get_action_prompt(browser, next_step)
+
+        page = browser.pages[browser.current_page_index]
+        images = [
+            page.current_screenshot_base64,
+            page.current_screenshot_annotated_base64,
+        ]
+
+        user_message = self.llm_client.create_user_message_with_images(
+            action_prompt, images, detail="high"
+        )
+        return user_message
+
+
+def get_formatted_interactable_elements(
+    pixels_above, pixels_below, label_simplified_htmls
+) -> str:
+    """
+    Get a formatted string of interactable elements on the page.
+
+    Args:
+        page: The Playwright page
+        label_simplified_htmls: Dictionary of labeled HTML elements
+        pixels_above_below: Tuple containing (pixels_above, pixels_below)
+
+    Returns:
+        A formatted string representation of interactable elements
+    """
+    has_content_above = pixels_above > 0
+    has_content_below = pixels_below > 0
+
+    elements_text = json.dumps(label_simplified_htmls, indent=4)
+    if elements_text:
+        if has_content_above:
+            elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
+        else:
+            elements_text = f"[Top of page]\n{elements_text}"
+        if has_content_below:
+            elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
+        else:
+            elements_text = f"{elements_text}\n[Bottom of page]"
+    else:
+        elements_text = "None"
+
+    return elements_text
+
+
+def get_formatted_page_position(pixels_above, pixels_below) -> str:
+    """
+    Get a formatted string describing the current scroll position.
+
+    Args:
+        pixels_above_below: Tuple containing (pixels_above, pixels_below)
+
+    Returns:
+        A human-readable description of the current scroll position
+    """
+    has_content_above = pixels_above > 0
+    has_content_below = pixels_below > 0
+
+    if has_content_above and has_content_below:
+        page_position = "You are in the middle of the page."
+    elif has_content_above:
+        page_position = "You are at the bottom of the page."
+    elif has_content_below:
+        page_position = "You are at the top of the page."
+    else:
+        page_position = "The entire page is visible. No scrolling is needed/possible."
+
+    return page_position
+
+
+async def get_formatted_tabs(browser) -> List[BrowserTab]:
+    """
+    Get a formatted string of tabs in the browser.
+    """
+    tabs = []
+    for i, page in enumerate(browser.pages):
+        tabs.append(
+            BrowserTab(
+                index=i,
+                title=await page.page.title(),
+                url=page.get_shortened_url(),
+                is_focused=browser.current_page_index == i,
+            )
+        )
+    return tabs

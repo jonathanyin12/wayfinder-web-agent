@@ -4,7 +4,10 @@ Navigation actions for browser page navigation.
 
 from playwright.async_api import Page
 
+from agent.browser.core.page import browser_action
 
+
+@browser_action
 async def go_to_url(page: Page, url: str):
     """
     Navigate to a specific URL.
@@ -14,6 +17,17 @@ async def go_to_url(page: Page, url: str):
         url: The URL to navigate to
     """
     await page.goto(url)
+
+
+@browser_action
+async def navigate(page: Page, direction: str):
+    """
+    Navigate the browser in a specified direction.
+    """
+    if direction == "back":
+        await go_back(page)
+    elif direction == "forward":
+        await go_forward(page)
 
 
 async def go_back(page: Page):
@@ -34,13 +48,3 @@ async def go_forward(page: Page):
         page: The Playwright page
     """
     await page.go_forward()
-
-
-async def refresh(page: Page):
-    """
-    Refresh the current page.
-
-    Args:
-        page: The Playwright page
-    """
-    await page.reload()

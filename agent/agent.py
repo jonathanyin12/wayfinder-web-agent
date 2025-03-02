@@ -7,8 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
-from .browser import AgentBrowser
-from .browser.core.action_executor import TOOLS
+from .browser import TOOLS, AgentBrowser
 from .llm import LLMClient, PromptManager
 from .models import AgentAction
 
@@ -36,18 +35,18 @@ class Agent:
         self.planning_model = planning_model
         self.default_url = default_url
 
+        # Components
+        self.llm_client = LLMClient()
+        self.prompt_manager = PromptManager(objective, self.llm_client)
+        self.browser = AgentBrowser()
+
         # Agent State
         self.identity = identity
         self.objective = objective  # The objective of the agent (e.g. "buy a macbook")
         self.message_history: List[Dict[str, Any]] = [
-            {"role": "system", "content": PromptManager(objective).get_system_prompt()}
+            {"role": "system", "content": self.prompt_manager.get_system_prompt()}
         ]
         self.action_history: List[AgentAction] = []
-
-        # Components
-        self.llm_client = LLMClient()
-        self.prompt_manager = PromptManager(objective)
-        self.browser = AgentBrowser()
 
         self.iteration = 0
 
@@ -62,14 +61,14 @@ class Agent:
             logger.info(f"{description} took {elapsed:.2f} seconds")
 
     # Main Control Flow Methods
-    async def launch(self, url: Optional[str] = None, headless: bool = False) -> None:
+    async def execute(self, url: Optional[str] = None, headless: bool = False) -> None:
         """Launch the agent with the specified URL or default URL."""
         target_url = url or self.default_url
         await self.browser.launch(target_url, headless)
-        await self.execute_agent_loop()
+        await self._execute_agent_loop()
         await self.browser.terminate()
 
-    async def execute_agent_loop(self) -> None:
+    async def _execute_agent_loop(self) -> None:
         """Main agent loop: observe, plan, and execute actions."""
         logger.info(f"BEGINNING TASK: {self.objective}")
 
@@ -100,7 +99,7 @@ class Agent:
 
             # Format the response for history
             formatted_response = self._format_planning_response(planning_response)
-            self._append_to_history("user", formatted_response)
+            self.message_history.append({"role": "user", "content": formatted_response})
             logger.info(json.dumps(planning_response, indent=4))
 
             # Action selection phase
@@ -127,16 +126,6 @@ class Agent:
                 )
                 break
 
-    # LLM Methods
-    def _append_to_history(self, role: str, content: Any) -> None:
-        """Helper method to append messages to history"""
-        self.message_history.append(
-            {
-                "role": role,
-                "content": content,
-            }
-        )
-
     # Helper methods
     async def _check_for_captcha(self) -> bool:
         """Check for captcha with timing."""
@@ -152,23 +141,9 @@ class Agent:
     async def _plan_next_action(self) -> Dict[str, Any]:
         """Evaluate the current page and plan the next action"""
         # Prepare planning prompt
-        planning_prompt = await self.prompt_manager.get_planning_prompt(
-            self.browser.get_site_name(),
-            await self.browser.get_formatted_page_position(),
-            self.browser.page.url,
-            await self.browser.get_formatted_interactable_elements(),
+        user_message = await self.prompt_manager.build_planning_message(
+            self.browser,
             last_action=self.action_history[-1] if self.action_history else None,
-        )
-
-        # Prepare images
-        images = []
-        if self.browser.previous_page_screenshot_base64:
-            images.append(self.browser.previous_page_screenshot_base64)
-        images.append(self.browser.current_page_screenshot_base64)
-
-        # Create content with text and images
-        user_message = self.llm_client.create_user_message_with_images(
-            planning_prompt, images, detail="low"
         )
 
         # Prepare and send message
@@ -202,23 +177,8 @@ class Agent:
     async def _choose_next_action(self, next_step: str) -> AgentAction:
         """Choose the next action to take"""
         # Prepare action prompt
-        action_prompt = await self.prompt_manager.get_action_prompt(
-            self.browser.get_site_name(),
-            await self.browser.get_formatted_page_position(),
-            self.browser.page.url,
-            await self.browser.get_formatted_interactable_elements(),
-            next_step,
-        )
-
-        # Prepare images for action selection
-        images = [
-            self.browser.current_page_screenshot_base64,
-            self.browser.current_annotated_page_screenshot_base64,
-        ]
-
-        # Create content with text and images
-        user_message = self.llm_client.create_user_message_with_images(
-            action_prompt, images
+        user_message = await self.prompt_manager.build_action_message(
+            self.browser, next_step
         )
 
         # Prepare and send message
@@ -236,9 +196,9 @@ class Agent:
 
         action = AgentAction(
             name=function_name,
-            html_element=self.browser.label_simplified_htmls.get(
-                args.get("element_id", -1)
-            ),
+            html_element=self.browser.pages[
+                self.browser.current_page_index
+            ].label_simplified_htmls.get(args.get("element_id", -1)),
             args=args,
             id=tool_call.id,
         )
@@ -264,7 +224,7 @@ class Agent:
             # Remove last two messages from history on failure
             if len(self.message_history) >= 2:
                 self.message_history = self.message_history[:-2]
-            await self.browser.update_browser_state()
+            await self.browser.update_page_state()
             return None
 
     # Human Control Methods
@@ -277,7 +237,7 @@ class Agent:
                 )
                 if user_input == "":  # Empty string means Enter was pressed
                     logger.info("Yielding control back to the agent.")
-                    await self.browser.update_browser_state()
+                    await self.browser.update_page_state()
                     break
                 logger.info("Please press 'Enter' key only.")
             except KeyboardInterrupt:

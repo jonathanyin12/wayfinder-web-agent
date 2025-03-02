@@ -2,6 +2,6 @@
 Utility functions for browser operations.
 """
 
-from . import page_info, url
+from . import annotation, page_state, screenshot
 
-__all__ = ["url", "page_info"]
+__all__ = ["annotation", "page_state", "screenshot"]

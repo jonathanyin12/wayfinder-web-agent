@@ -2,9 +2,9 @@
 Scroll actions for navigating up and down a page.
 """
 
-from typing import Tuple
-
 from playwright.async_api import Page
+
+from agent.browser.core.page import browser_action
 
 
 async def scroll_down(page: Page):
@@ -31,29 +31,16 @@ async def scroll_up(page: Page):
     )
 
 
-async def get_pixels_above_below(page: Page) -> Tuple[int, int]:
+@browser_action
+async def scroll(page: Page, direction: str):
     """
-    Get the number of pixels above and below the current viewport.
+    Scroll the page in a specified direction.
 
     Args:
         page: The Playwright page
-
-    Returns:
-        A tuple containing (pixels_above, pixels_below)
+        direction: The direction to scroll ('up' or 'down')
     """
-    pixels_above = await page.evaluate(
-        """() => {
-            const scrollingElement = document.scrollingElement || document.body;
-            return scrollingElement.scrollTop;
-        }"""
-    )
-    pixels_below = await page.evaluate(
-        """() => {
-            const scrollingElement = document.scrollingElement || document.body;
-            const scrollTop = scrollingElement.scrollTop;
-            const scrollHeight = scrollingElement.scrollHeight;
-            const clientHeight = window.innerHeight;
-            return Math.max(0, scrollHeight - clientHeight - scrollTop);
-        }"""
-    )
-    return pixels_above, pixels_below
+    if direction == "down":
+        await scroll_down(page)
+    elif direction == "up":
+        await scroll_up(page)

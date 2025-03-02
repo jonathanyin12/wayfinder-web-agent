@@ -1,5 +1,6 @@
 # Export submodules for direct access if needed
-from . import actions, core, utils
+from . import actions
 from .core.browser import AgentBrowser
+from .core.tools import TOOLS
 
-__all__ = ["AgentBrowser", "core", "actions", "utils"]
+__all__ = ["AgentBrowser", "TOOLS"]

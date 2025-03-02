@@ -7,12 +7,14 @@ import json
 import markdownify
 from playwright.async_api import Page
 
+from agent.browser.core.page import browser_action
 from agent.llm.client import LLMClient
 
 client = LLMClient()
 
 
-async def extract_page_information(page: Page, objective: str) -> str:
+@browser_action
+async def extract_info(page: Page, objective: str) -> str:
     """
     Extract information from the page relevant to the given objective.
 
