@@ -130,7 +130,7 @@ class AgentBrowser:
         if action.name == "end":
             result = action.args["reason"]
         elif action.name == "switch_tab":
-            await self.switch_tab(action.args["tab_index"])
+            result = await self.switch_tab(action.args["tab_index"])
         else:
             current_page = self.pages[self.current_page_index]
 
@@ -162,7 +162,7 @@ class AgentBrowser:
         if 0 <= tab_index < len(self.pages):
             target_page = self.pages[tab_index]
             self.current_page_index = tab_index
-            await target_page.bring_to_front()
+            await target_page.page.bring_to_front()
         else:
             raise IndexError(
                 f"Tab index {tab_index} out of range. Available tabs: {len(self.pages)}"

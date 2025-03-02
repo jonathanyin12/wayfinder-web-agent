@@ -73,6 +73,10 @@ class AgentBrowserPage:
                     if selector:
                         kwargs["selector"] = selector
                         del kwargs["element_id"]
+                    else:
+                        raise ValueError(
+                            f"No selector found for element_id: {kwargs['element_id']}"
+                        )
 
                 return await action_func(self.page, *args, **kwargs)
 
