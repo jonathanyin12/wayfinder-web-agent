@@ -1,7 +1,18 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage
+from openai.types.chat.chat_completion_content_part_image_param import (
+    ChatCompletionContentPartImageParam,
+    ImageURL,
+)
+from openai.types.chat.chat_completion_content_part_text_param import (
+    ChatCompletionContentPartTextParam,
+)
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
 
 PRICING = {
     "gpt-4o-mini": {
@@ -29,31 +40,30 @@ class LLMClient:
 
     async def make_call(
         self,
-        messages: List[ChatCompletionMessage],
+        messages: List[ChatCompletionMessageParam],
         model: str,
-        tools: List[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         attempt: int = 0,
         timeout: int = 60,
         json_format: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> ChatCompletionMessage:
         """Helper method to make LLM API calls with retry logic"""
         try:
+            kwargs = {}
+            if json_format and not tools:
+                kwargs["response_format"] = {"type": "json_object"}
+            if model.startswith("gpt-4o"):
+                kwargs["temperature"] = 0.0
+            if model.startswith("o"):
+                kwargs["reasoning_effort"] = "high"
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "required"
+                kwargs["parallel_tool_calls"] = False
+
             response = await self.client.with_options(
                 timeout=timeout
-            ).chat.completions.create(
-                model=model,
-                messages=messages,
-                **(
-                    {"response_format": {"type": "json_object"}}
-                    if json_format and not tools
-                    else {}
-                ),
-                **({"temperature": 0.0} if model.startswith("gpt-4o") else {}),
-                **({"reasoning_effort": "high"} if model.startswith("o") else {}),
-                **({"tools": tools} if tools else {}),
-                **({"tool_choice": "required"} if tools else {}),
-                **({"parallel_tool_calls": False} if tools else {}),
-            )
+            ).chat.completions.create(model=model, messages=messages, **kwargs)
 
             # Track token usage by model
             if model not in LLMClient.token_usage:
@@ -69,10 +79,7 @@ class LLMClient:
             LLMClient.token_usage[model]["completion_tokens"] += usage.completion_tokens
             LLMClient.token_usage[model]["total_tokens"] += usage.total_tokens
 
-            if tools:
-                return response.choices[0].message
-            else:
-                return response.choices[0].message.content
+            return response.choices[0].message
         except Exception as e:
             if attempt >= self.max_retries - 1:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
@@ -112,59 +119,103 @@ class LLMClient:
         self,
         text_content: str,
         images: List[str],
-        detail: Optional[Union[str, List[str]]] = None,
-    ) -> List[Dict[str, Any]]:
+        detail: Optional[
+            Union[Literal["auto", "low", "high"], List[Literal["auto", "low", "high"]]]
+        ] = None,
+    ) -> ChatCompletionUserMessageParam:
         """Helper to create a message with text and images
 
         Args:
             text_content: The text content of the message
             images: List of base64-encoded images to include
+            detail: Either a single detail level or list of detail levels ('auto', 'low', or 'high')
 
         Returns:
-            A formatted content list ready for OpenAI API
+            A formatted message ready for OpenAI API
         """
-        content = [{"type": "text", "text": text_content}]
+        content: List[
+            Union[
+                ChatCompletionContentPartTextParam, ChatCompletionContentPartImageParam
+            ]
+        ] = [ChatCompletionContentPartTextParam(type="text", text=text_content)]
         if detail is None:
-            details = ["high"] * len(images)
+            details: List[Literal["auto", "low", "high"]] = ["high"] * len(images)
         else:
             # If detail is a single string, convert it to a list
             if isinstance(detail, str):
-                details = [detail] * len(images)
+                details = [detail] * len(images)  # type: ignore
             # If detail is a list, check its length
-            elif isinstance(detail, list):
+            else:
                 assert len(detail) == len(images)
                 details = detail
 
         for image_base64, detail in zip(images, details):
             if image_base64:
                 content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{image_base64}",
-                            "detail": detail,
-                        },
-                    }
+                    ChatCompletionContentPartImageParam(
+                        type="image_url",
+                        image_url=ImageURL(
+                            url=f"data:image/png;base64,{image_base64}",
+                            detail=detail,
+                        ),
+                    )
                 )
 
-        return {"role": "user", "content": content}
+        return ChatCompletionUserMessageParam(role="user", content=content)
+
+    def format_message_history(self, message_history: List[Dict[str, Any]]) -> str:
+        """Format the message history into a readable string for debugging
+
+        Args:
+            message_history: List of message dictionaries
+
+        Returns:
+            A formatted string representation of the message history
+        """
+        formatted_output = []
+
+        for message in message_history:
+            # Convert ChatCompletionMessage to dict if needed
+            if isinstance(message, ChatCompletionMessage):
+                message = message.model_dump()
+
+            # Add a clear header for each message
+            role = message["role"].upper()
+            formatted_output.append(f"=== {role} MESSAGE ===")
+
+            # Process message content
+            if message.get("content"):
+                if isinstance(message["content"], list):
+                    # Handle multi-part content (text and images)
+                    for content_item in message["content"]:
+                        if content_item["type"] == "text":
+                            # Format text content with indentation
+                            text_lines = content_item["text"].split("\n")
+                            for line in text_lines:
+                                formatted_output.append(f"  {line}")
+                        elif content_item["type"] == "image_url":
+                            formatted_output.append("  [IMAGE ATTACHMENT]")
+                else:
+                    # Handle simple string content
+                    text_lines = message["content"].split("\n")
+                    for line in text_lines:
+                        formatted_output.append(f"  {line}")
+
+            # Handle tool calls
+            elif message.get("tool_calls"):
+                formatted_output.append("  [TOOL CALLS]")
+                for i, tool_call in enumerate(message["tool_calls"], 1):
+                    formatted_output.append(f"  Tool Call #{i}:")
+                    formatted_output.append(f"    {tool_call}")
+
+            # Add separator between messages
+            formatted_output.append("")
+            formatted_output.append("-" * 50)
+            formatted_output.append("")
+
+        return "\n".join(formatted_output)
 
     def print_message_history(self, message_history: List[Dict[str, Any]]) -> None:
         """Print the message history for debugging"""
-        for message in message_history:
-            if isinstance(message, ChatCompletionMessage):
-                message = message.model_dump()
-            print(f"--- {message['role'].upper()} ---")
-            if message["content"]:
-                if isinstance(message["content"], list):
-                    for content in message["content"]:
-                        if content["type"] == "text":
-                            print(content["text"])
-                        elif content["type"] == "image_url":
-                            print("[IMAGE]")
-                else:
-                    print(message["content"])
-            elif message["tool_calls"]:
-                print("[TOOL CALLS]")
-                for tool_call in message["tool_calls"]:
-                    print(tool_call)
+        formatted_history = self.format_message_history(message_history)
+        print(formatted_history)

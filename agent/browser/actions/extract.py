@@ -43,4 +43,6 @@ Output your response in markdown format if there is relevant information to the 
         "gpt-4o",
         json_format=False,
     )
-    return response
+    if not response.content:
+        raise ValueError("No response content")
+    return response.content

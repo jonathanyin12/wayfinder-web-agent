@@ -2,7 +2,9 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -29,6 +31,7 @@ class Agent:
         action_model: str = "gpt-4o",
         planning_model: str = "o1",
         default_url: str = "about:blank",
+        output_dir: str = "",
     ):
         # Agent Configuration
         self.action_model = action_model
@@ -38,7 +41,11 @@ class Agent:
         # Components
         self.llm_client = LLMClient()
         self.prompt_manager = PromptManager(objective, self.llm_client)
-        self.browser = AgentBrowser()
+        self.output_dir = (
+            output_dir or f"runs/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.browser = AgentBrowser(self.output_dir)
 
         # Agent State
         self.identity = identity
@@ -48,6 +55,7 @@ class Agent:
         ]
         self.action_history: List[AgentAction] = []
 
+        self.required_human_input = False
         self.iteration = 0
 
     @contextlib.asynccontextmanager
@@ -71,7 +79,7 @@ class Agent:
     async def _execute_agent_loop(self) -> None:
         """Main agent loop: observe, plan, and execute actions."""
         logger.info(f"BEGINNING TASK: {self.objective}")
-
+        self.start_time = time.time()
         while self.iteration < 50:
             self.iteration += 1
 
@@ -123,10 +131,8 @@ class Agent:
             logger.info("Max iterations reached. Exiting...")
         else:
             logger.info(f"Completed task in {self.iteration} iterations.")
-            self.llm_client.print_message_history(self.message_history)
-
-            if action.args["final_response"]:
-                logger.info(f"Final result: {action.args['final_response']}")
+            logger.info(f"Final result: {action.args['final_response']}")
+            self._save_execution_history(action.args["final_response"])
 
     # Helper methods
     async def _check_for_captcha(self) -> bool:
@@ -139,28 +145,7 @@ class Agent:
         async with self._timed_operation("Planning"):
             return await self._plan_next_action()
 
-    # Main Methods
-    async def _plan_next_action(self) -> Dict[str, Any]:
-        """Evaluate the current page and plan the next action"""
-        # Prepare planning prompt
-        user_message = await self.prompt_manager.build_planning_message(
-            self.browser,
-            last_action=self.action_history[-1] if self.action_history else None,
-        )
-
-        # Prepare and send message
-        messages = [*self.message_history, user_message]
-
-        try:
-            response = await self.llm_client.make_call(messages, self.planning_model)
-            response_json = json.loads(response)
-            return response_json
-        except Exception as e:
-            logger.error(f"Error in planning: {str(e)}")
-            # Return a minimal valid response to avoid crashing
-            return {"page_summary": "Error in planning", "next_step": "Retry"}
-
-    def _add_plan_to_message_history(self, response_json: Dict[str, Any]) -> str:
+    def _add_plan_to_message_history(self, response_json: Dict[str, Any]) -> None:
         """Format the planning response for history"""
         parts = [f"Page summary: {response_json['page_summary']}"]
 
@@ -179,11 +164,70 @@ class Agent:
         # Add the formatted planning response to message history
         self.message_history.append({"role": "user", "content": formatted_response})
 
-    async def _choose_next_action(self, next_step: str) -> AgentAction:
+    def _save_execution_history(self, final_response: str):
+        """Save execution data to a file."""
+        # Save raw message history
+        message_history_path = os.path.join(self.output_dir, "raw_message_history.json")
+        with open(message_history_path, "w", encoding="utf-8") as f:
+            json.dump(self.message_history, f, indent=2)
+        logger.info(f"Saved message history to {message_history_path}")
+
+        # Save formatted message history for better readability
+        formatted_history_path = os.path.join(
+            self.output_dir, "formatted_message_history.txt"
+        )
+        formatted_history = self.llm_client.format_message_history(self.message_history)
+        with open(formatted_history_path, "w", encoding="utf-8") as f:
+            f.write(formatted_history)
+        logger.info(f"Saved formatted message history to {formatted_history_path}")
+
+        # Save meta data associated with the run
+        meta_data_path = os.path.join(self.output_dir, "meta_data.json")
+        meta_data = {
+            "objective": self.objective,
+            "action_model": self.action_model,
+            "planning_model": self.planning_model,
+            "default_url": self.default_url,
+            "iterations": self.iteration,
+            "final_response": final_response,
+            "execution_time": time.time() - self.start_time,
+            "token_usage": self.llm_client.token_usage,
+            "required_human_input": self.required_human_input,
+        }
+        with open(meta_data_path, "w", encoding="utf-8") as f:
+            json.dump(meta_data, f, indent=2)
+        logger.info(f"Saved meta data to {meta_data_path}")
+
+    # Main Methods
+    async def _plan_next_action(self) -> Dict[str, Any]:
+        """Evaluate the current page and plan the next action"""
+        # Prepare planning prompt
+        user_message = await self.prompt_manager.build_planning_message(
+            self.browser,
+            last_action=self.action_history[-1] if self.action_history else None,
+        )
+
+        # Prepare and send message
+        messages = [*self.message_history, user_message]
+
+        try:
+            response = await self.llm_client.make_call(messages, self.planning_model)
+            if not response.content:
+                raise ValueError("Empty response content")
+            response_json = json.loads(response.content)
+            return response_json
+        except Exception as e:
+            logger.error(f"Error in planning: {str(e)}")
+            # Return a minimal valid response to avoid crashing
+            return {"page_summary": "Error in planning", "next_step": "Retry"}
+
+    async def _choose_next_action(
+        self, planning_response: Dict[str, Any]
+    ) -> AgentAction:
         """Choose the next action to take"""
         # Prepare action prompt
         user_message = await self.prompt_manager.build_action_message(
-            self.browser, next_step
+            self.browser, planning_response
         )
 
         # Prepare and send message
@@ -193,7 +237,10 @@ class Agent:
             messages, self.action_model, tools=TOOLS
         )
         # Append tool call message to history
-        self.message_history.append(tool_call_message)
+        self.message_history.append(tool_call_message.model_dump())
+
+        if not tool_call_message.tool_calls:
+            raise ValueError("No tool calls received from LLM")
 
         tool_call = tool_call_message.tool_calls[0]
         function_name = tool_call.function.name
@@ -203,7 +250,7 @@ class Agent:
             name=function_name,
             html_element=self.browser.pages[
                 self.browser.current_page_index
-            ].label_simplified_htmls.get(args.get("element_id", -1)),
+            ].label_simplified_htmls.get(args.get("element_id", -1), ""),
             args=args,
             id=tool_call.id,
         )
@@ -235,6 +282,7 @@ class Agent:
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
         """Wait for human to press Enter to yield control back to agent"""
+        self.required_human_input = True
         while True:
             try:
                 user_input = input(
@@ -247,5 +295,4 @@ class Agent:
                 logger.info("Please press 'Enter' key only.")
             except KeyboardInterrupt:
                 logger.info("Interrupted by user. Terminating...")
-                await self.terminate()
                 break

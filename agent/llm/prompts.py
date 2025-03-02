@@ -1,6 +1,10 @@
 import json
 from typing import Dict, List
 
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
+
 from agent.llm.client import LLMClient
 from agent.models import AgentAction, BrowserTab
 
@@ -12,8 +16,8 @@ class PromptManager:
 
     def get_system_prompt(self) -> str:
         """Returns the system prompt for the agent"""
-        return f"""You are a helpful web browsing assistant.    
-        
+        return f"""You are a helpful web browsing assistant.
+
 Here is your ultimate objective: {self.objective}.
 
 POSSIBLE ACTIONS:
@@ -100,7 +104,7 @@ TASK:
 4. Suggest an appropriate next step given the current state of the page and the overall objective.
 - Suggest potential short action sequences rather than broad goals. The actions you can take are listed under POSSIBLE ACTIONS.
 - If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
-- If the objective is complete, suggest ending the task.
+- If the objective is fully complete, the next step should be to end the task.
 
 Respond with a JSON object with the following fields:
 {{
@@ -168,7 +172,7 @@ Important Notes:
         self,
         browser,
         last_action: AgentAction | None = None,
-    ) -> str:
+    ) -> ChatCompletionUserMessageParam:
         planning_prompt = await self._get_planning_prompt(browser, last_action)
 
         page = browser.pages[browser.current_page_index]
@@ -186,7 +190,7 @@ Important Notes:
         self,
         browser,
         planning_response: Dict[str, str],
-    ) -> str:
+    ) -> ChatCompletionUserMessageParam:
         action_prompt = await self._get_action_prompt(browser, planning_response)
 
         page = browser.pages[browser.current_page_index]

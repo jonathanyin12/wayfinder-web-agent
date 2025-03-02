@@ -1,18 +1,15 @@
-from dataclasses import dataclass
-from typing import Any, List
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
 class AgentAction:
     name: str
     html_element: str = ""
-    args: List[Any] = None
-    id: str = None
+    args: dict[str, Any] = field(default_factory=dict)
+    id: str = ""
 
     def __post_init__(self):
-        if self.args is None:
-            self.args = []
-
         self.description = f"{self.name}{f' {self.html_element}' if self.html_element else ''}, args: {self.args}"
 
 

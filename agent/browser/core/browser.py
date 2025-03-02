@@ -5,10 +5,8 @@ This module provides the main AgentBrowser class that handles browser initializa
 page navigation, and interaction with web elements through various actions.
 """
 
-import json
 import logging
-from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from playwright.async_api import (
     Browser,
@@ -35,7 +33,7 @@ class AgentBrowser:
     and provides a simplified interface for agent interactions.
     """
 
-    def __init__(self, screenshot_folder: str = None):
+    def __init__(self, output_dir):
         """Initialize the browser controller."""
         # Playwright resources
         self.playwright: Optional[Playwright] = None
@@ -47,17 +45,14 @@ class AgentBrowser:
 
         self.llm_client = LLMClient()
 
-        self.screenshot_folder = (
-            screenshot_folder
-            or f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        )
+        self.output_dir = output_dir
 
     # Browser lifecycle methods
     # ------------------------------------------------------------------------
 
     async def launch(
         self, url: str = "https://google.com", headless: bool = False
-    ) -> Tuple[BrowserContext, Page]:
+    ) -> None:
         """
         Launch the browser and navigate to the initial URL.
 
@@ -96,8 +91,11 @@ class AgentBrowser:
 
     async def create_new_page(self, url: str):
         """Create a new page in the browser."""
+        if not self.context:
+            raise RuntimeError("Browser has not been initialized")
+
         page = await self.context.new_page()
-        browser_page = AgentBrowserPage(page, self.llm_client, self.screenshot_folder)
+        browser_page = AgentBrowserPage(page, self.llm_client, self.output_dir)
         self.pages.append(browser_page)
         self.current_page_index = len(self.pages) - 1
 
@@ -107,7 +105,7 @@ class AgentBrowser:
     async def handle_new_page_event(self, page: Page):
         """Handle page events."""
         logger.info("New tab opened")
-        browser_page = AgentBrowserPage(page, self.llm_client, self.screenshot_folder)
+        browser_page = AgentBrowserPage(page, self.llm_client, self.output_dir)
         self.pages.append(browser_page)
         self.current_page_index = len(self.pages) - 1
         await browser_page.update_page_state()
@@ -138,7 +136,7 @@ class AgentBrowser:
             result = await getattr(current_page, action.name)(**action.args)
 
         if result:
-            formatted_result = f"Performed {action.description}. Result: {result}"
+            formatted_result = f"Performed {action.description}.\n\nResult:\n{result}"
         else:
             formatted_result = f"Performed {action.description}. Outcome unknown."
 

@@ -34,7 +34,7 @@ class BrowserActions:
 
 
 class AgentBrowserPage:
-    def __init__(self, page: Page, llm_client: LLMClient, screenshot_folder: str):
+    def __init__(self, page: Page, llm_client: LLMClient, output_dir: str):
         self.page = page
         self.llm_client = llm_client
         self.label_selectors = {}
@@ -43,7 +43,7 @@ class AgentBrowserPage:
         self.current_screenshot_base64 = ""
         self.current_screenshot_annotated_base64 = ""
 
-        self.screenshot_folder = screenshot_folder
+        self.output_dir = output_dir
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -93,14 +93,14 @@ class AgentBrowserPage:
         self.previous_screenshot_base64 = self.current_screenshot_base64
         self.current_screenshot_base64 = await take_screenshot(
             self.page,
-            save_path=f"{self.screenshot_folder}/screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+            save_path=f"{self.output_dir}/screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
         self.label_selectors, self.label_simplified_htmls = await annotate_page(
             self.page
         )
         self.current_screenshot_annotated_base64 = await take_screenshot(
             self.page,
-            save_path=f"{self.screenshot_folder}/annotated_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+            save_path=f"{self.output_dir}/annotated_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
         await clear_annotations(self.page)
 
@@ -192,7 +192,9 @@ Respond with a JSON object:
         response = await self.llm_client.make_call(
             [user_message], "gpt-4o-mini", timeout=10
         )
-        response_json = json.loads(response)
+        if not response.content:
+            raise ValueError("Empty response content")
+        response_json = json.loads(response.content)
 
         # Return the captcha detection result
         return response_json.get("is_captcha", False)
