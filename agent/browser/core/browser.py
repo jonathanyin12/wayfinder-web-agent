@@ -35,7 +35,7 @@ class AgentBrowser:
     and provides a simplified interface for agent interactions.
     """
 
-    def __init__(self):
+    def __init__(self, screenshot_folder: str = None):
         """Initialize the browser controller."""
         # Playwright resources
         self.playwright: Optional[Playwright] = None
@@ -47,9 +47,10 @@ class AgentBrowser:
 
         self.llm_client = LLMClient()
 
-        # Screenshot configuration
-        self.screenshot_index = 0
-        self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
+        self.screenshot_folder = (
+            screenshot_folder
+            or f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
 
     # Browser lifecycle methods
     # ------------------------------------------------------------------------
@@ -96,7 +97,7 @@ class AgentBrowser:
     async def create_new_page(self, url: str):
         """Create a new page in the browser."""
         page = await self.context.new_page()
-        browser_page = AgentBrowserPage(page, self.llm_client)
+        browser_page = AgentBrowserPage(page, self.llm_client, self.screenshot_folder)
         self.pages.append(browser_page)
         self.current_page_index = len(self.pages) - 1
 
@@ -106,7 +107,7 @@ class AgentBrowser:
     async def handle_new_page_event(self, page: Page):
         """Handle page events."""
         logger.info("New tab opened")
-        browser_page = AgentBrowserPage(page, self.llm_client)
+        browser_page = AgentBrowserPage(page, self.llm_client, self.screenshot_folder)
         self.pages.append(browser_page)
         self.current_page_index = len(self.pages) - 1
         await browser_page.update_page_state()

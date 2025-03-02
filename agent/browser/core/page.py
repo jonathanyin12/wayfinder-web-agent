@@ -34,7 +34,7 @@ class BrowserActions:
 
 
 class AgentBrowserPage:
-    def __init__(self, page: Page, llm_client: LLMClient):
+    def __init__(self, page: Page, llm_client: LLMClient, screenshot_folder: str):
         self.page = page
         self.llm_client = llm_client
         self.label_selectors = {}
@@ -43,8 +43,7 @@ class AgentBrowserPage:
         self.current_screenshot_base64 = ""
         self.current_screenshot_annotated_base64 = ""
 
-        self.screenshot_index = 0
-        self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
+        self.screenshot_folder = screenshot_folder
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -94,17 +93,15 @@ class AgentBrowserPage:
         self.previous_screenshot_base64 = self.current_screenshot_base64
         self.current_screenshot_base64 = await take_screenshot(
             self.page,
-            save_path=f"{self.screenshot_folder}/screenshot_{self.screenshot_index}.png",
+            save_path=f"{self.screenshot_folder}/screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
-        self.screenshot_index += 1
         self.label_selectors, self.label_simplified_htmls = await annotate_page(
             self.page
         )
         self.current_screenshot_annotated_base64 = await take_screenshot(
             self.page,
-            save_path=f"{self.screenshot_folder}/screenshot_{self.screenshot_index}.png",
+            save_path=f"{self.screenshot_folder}/annotated_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
-        self.screenshot_index += 1
         await clear_annotations(self.page)
 
     def get_base_url(self) -> str:
