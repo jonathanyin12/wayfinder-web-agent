@@ -84,6 +84,8 @@ class AgentBrowser:
 
         await self.create_new_page(url)
 
+        self.context.on("page", self.handle_new_page_event)
+
     async def terminate(self):
         """Close browser and playwright resources."""
         if self.browser:
@@ -99,6 +101,14 @@ class AgentBrowser:
         self.current_page_index = len(self.pages) - 1
 
         await browser_page.go_to_url(url)
+        await browser_page.update_page_state()
+
+    async def handle_new_page_event(self, page: Page):
+        """Handle page events."""
+        logger.info("New tab opened")
+        browser_page = AgentBrowserPage(page, self.llm_client)
+        self.pages.append(browser_page)
+        self.current_page_index = len(self.pages) - 1
         await browser_page.update_page_state()
 
     # Action execution
@@ -148,15 +158,14 @@ class AgentBrowser:
         Args:
             tab_index: The index of the tab to switch to (0-based)
         """
-        pages = await self.context.pages()
 
-        if 0 <= tab_index < len(pages):
-            target_page = pages[tab_index]
+        if 0 <= tab_index < len(self.pages):
+            target_page = self.pages[tab_index]
             self.current_page_index = tab_index
             await target_page.bring_to_front()
         else:
             raise IndexError(
-                f"Tab index {tab_index} out of range. Available tabs: {len(pages)}"
+                f"Tab index {tab_index} out of range. Available tabs: {len(self.pages)}"
             )
 
     async def check_for_captcha(self) -> bool:

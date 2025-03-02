@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any, Tuple
 from urllib.parse import urlparse
 
@@ -40,6 +42,9 @@ class AgentBrowserPage:
         self.previous_screenshot_base64 = ""
         self.current_screenshot_base64 = ""
         self.current_screenshot_annotated_base64 = ""
+
+        self.screenshot_index = 0
+        self.screenshot_folder = f"screenshots/{datetime.now().strftime('%Y%m%d_%H%M')}"
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -83,13 +88,19 @@ class AgentBrowserPage:
         await self.wait_for_page_load()
 
         self.previous_screenshot_base64 = self.current_screenshot_base64
-        self.current_screenshot_base64 = await take_screenshot(self.page)
+        self.current_screenshot_base64 = await take_screenshot(
+            self.page,
+            save_path=f"{self.screenshot_folder}/screenshot_{self.screenshot_index}.png",
+        )
+        self.screenshot_index += 1
         self.label_selectors, self.label_simplified_htmls = await annotate_page(
             self.page
         )
         self.current_screenshot_annotated_base64 = await take_screenshot(
-            self.page, full_page=True
+            self.page,
+            save_path=f"{self.screenshot_folder}/screenshot_{self.screenshot_index}.png",
         )
+        self.screenshot_index += 1
         await clear_annotations(self.page)
 
     def get_base_url(self) -> str:
@@ -196,10 +207,8 @@ Respond with a JSON object:
         Args:
             page: The Playwright page
         """
-        if not self.page:
-            raise RuntimeError("Browser page is not initialized")
-
-        try:
-            await self.page.wait_for_load_state("networkidle", timeout=5000)
-        except Exception as e:
-            logger.warning(f"Error waiting for networkidle: {e}")
+        await asyncio.sleep(3)
+        # try:
+        #     await self.page.wait_for_load_state("networkidle", timeout=5000)
+        # except Exception as e:
+        #     logger.warning(f"Error waiting for networkidle: {e}")

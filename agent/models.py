@@ -22,6 +22,3 @@ class BrowserTab:
     title: str
     url: str
     is_focused: bool
-
-    # def __str__(self):
-    #     return f"Tab(index={self.index}, title={self.title}, url={self.url}, is_focused={self.is_focused})"
