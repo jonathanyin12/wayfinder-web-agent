@@ -124,6 +124,8 @@ class Agent:
                 logger.info(
                     f"Completed task in {self.iteration} iterations. Exiting..."
                 )
+                if action.args["final_response"]:
+                    logger.info(f"Final result: {action.args['final_response']}")
                 break
 
     # Helper methods

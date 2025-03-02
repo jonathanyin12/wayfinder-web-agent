@@ -33,15 +33,23 @@ class LLMClient:
         model: str,
         tools: List[Dict[str, Any]] = None,
         attempt: int = 0,
+        timeout: int = 60,
+        json_format: bool = True,
     ) -> Dict[str, Any]:
         """Helper method to make LLM API calls with retry logic"""
         try:
-            response = await self.client.chat.completions.create(
+            response = await self.client.with_options(
+                timeout=timeout
+            ).chat.completions.create(
                 model=model,
                 messages=messages,
-                **({"response_format": {"type": "json_object"}} if not tools else {}),
+                **(
+                    {"response_format": {"type": "json_object"}}
+                    if json_format and not tools
+                    else {}
+                ),
                 **({"temperature": 0.0} if model.startswith("gpt-4o") else {}),
-                **({"reasoning_effort": "low"} if model.startswith("o") else {}),
+                **({"reasoning_effort": "high"} if model.startswith("o") else {}),
                 **({"tools": tools} if tools else {}),
                 **({"tool_choice": "required"} if tools else {}),
                 **({"parallel_tool_calls": False} if tools else {}),

@@ -192,7 +192,9 @@ Respond with a JSON object:
         )
 
         # Make the LLM call with gpt-4o-mini
-        response = await self.llm_client.make_call([user_message], "gpt-4o-mini")
+        response = await self.llm_client.make_call(
+            [user_message], "gpt-4o-mini", timeout=10
+        )
         response_json = json.loads(response)
 
         # Return the captcha detection result

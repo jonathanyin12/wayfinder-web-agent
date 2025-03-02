@@ -128,7 +128,7 @@ class AgentBrowser:
             raise RuntimeError("Browser has no pages initialized")
 
         if action.name == "end":
-            result = action.args["reason"]
+            result = action.args["final_response"]
         elif action.name == "switch_tab":
             result = await self.switch_tab(action.args["tab_index"])
         else:

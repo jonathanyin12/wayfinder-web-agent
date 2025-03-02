@@ -19,7 +19,7 @@ Here is your ultimate objective: {self.objective}.
 POSSIBLE ACTIONS:
 - click_element: click a specific element on the page
 - type_text: type text into a text box on the page and optionally submit the text
-- extract_info: extract specific information from the page
+- extract_info: extract textual information from the page (note: this extracts textual information from the entire page, not just the visible portion, so you don't need to scroll before using this action)
 - scroll: scroll up or down on the page
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
@@ -100,7 +100,7 @@ TASK:
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
 4. Suggest an appropriate next step given the current state of the page and the overall objective.
-- Think in terms of potential short action sequences rather than broad goals. The actions you can take are listed under POSSIBLE ACTIONS.
+- Suggest potential short action sequences rather than broad goals. The actions you can take are listed under POSSIBLE ACTIONS.
 - If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
 - If the objective is complete, suggest ending the task.
 
@@ -210,11 +210,11 @@ def get_formatted_interactable_elements(
     elements_text = json.dumps(label_simplified_htmls, indent=4)
     if elements_text:
         if has_content_above:
-            elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
+            elements_text = f"... {pixels_above} pixels above - scroll up or extract info to see more ...\n{elements_text}"
         else:
             elements_text = f"[Top of page]\n{elements_text}"
         if has_content_below:
-            elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
+            elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down or extract info to see more ..."
         else:
             elements_text = f"{elements_text}\n[Bottom of page]"
     else:

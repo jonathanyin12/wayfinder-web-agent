@@ -69,7 +69,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "extract_info",
-            "description": "Extract information from the page relevant to the objective.",
+            "description": "Extract textual information from the entire page relevant to the objective.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -146,7 +146,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "end",
-            "description": "End the current task.",
+            "description": "Declare that you have completed the task.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -154,15 +154,15 @@ TOOLS = [
                         "type": "string",
                         "description": "The reason for ending the task.",
                     },
-                    "output": {
+                    "final_response": {
                         "type": "string",
-                        "description": "The output of the task if the task is an extraction/retrieval task.",
+                        "description": "The final response/answer to the task. Include detailed information if the task involved gathering specific information (e.g. a recipe, a product description, summary of a page, etc.).",
                     },
                 },
-                "required": ["reason"],
+                "required": ["reason", "final_response"],
                 "additionalProperties": False,
             },
-            "strict": False,
+            "strict": True,
         },
     },
 ]
