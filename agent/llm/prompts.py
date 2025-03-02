@@ -1,12 +1,14 @@
 import json
 from typing import Any, Dict, List
 
+from agent.llm.client import LLMClient
 from agent.models import AgentAction, BrowserTab
 
 
 class PromptManager:
-    def __init__(self, objective: str):
+    def __init__(self, objective: str, llm_client: LLMClient):
         self.objective = objective
+        self.llm_client = llm_client
 
     def get_system_prompt(self) -> str:
         """Returns the system prompt for the agent"""
@@ -25,7 +27,7 @@ POSSIBLE ACTIONS:
 - end: declare that you have completed the task
 """
 
-    async def get_planning_prompt(
+    async def _get_planning_prompt(
         self,
         browser,
         last_action: AgentAction | None = None,
@@ -111,7 +113,7 @@ Respond with a JSON object with the following fields:
 }}
 """
 
-    async def get_action_prompt(
+    async def _get_action_prompt(
         self,
         browser,
         next_step: Dict[str, Any],
@@ -150,6 +152,42 @@ Choose the action that best matches the following next step:
 
 The entire next step may not be achievable through a single action and may require multiple actions (e.g. scroll down first, then click on an element). If so, simply output the first action. If no currently visible elements are relevant to the next step, scrolling may be required to reveal the relevant elements.
 """
+
+    async def build_planning_message(
+        self,
+        browser,
+        last_action: AgentAction | None = None,
+    ) -> str:
+        planning_prompt = await self._get_planning_prompt(browser, last_action)
+
+        page = browser.pages[browser.current_page_index]
+        images = [
+            page.previous_screenshot_base64,
+            page.current_screenshot_base64,
+        ]
+
+        user_message = self.llm_client.create_user_message_with_images(
+            planning_prompt, images, detail="low"
+        )
+        return user_message
+
+    async def build_action_message(
+        self,
+        browser,
+        next_step: Dict[str, Any],
+    ) -> str:
+        action_prompt = await self._get_action_prompt(browser, next_step)
+
+        page = browser.pages[browser.current_page_index]
+        images = [
+            page.current_screenshot_base64,
+            page.current_screenshot_annotated_base64,
+        ]
+
+        user_message = self.llm_client.create_user_message_with_images(
+            action_prompt, images, detail="high"
+        )
+        return user_message
 
 
 def get_formatted_interactable_elements(
