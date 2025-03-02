@@ -30,13 +30,13 @@ class Agent:
         objective: str = "",
         action_model: str = "gpt-4o",
         planning_model: str = "o1",
-        default_url: str = "about:blank",
+        initial_url: str = "about:blank",
         output_dir: str = "",
     ):
         # Agent Configuration
         self.action_model = action_model
         self.planning_model = planning_model
-        self.default_url = default_url
+        self.initial_url = initial_url
 
         # Components
         self.llm_client = LLMClient()
@@ -69,10 +69,9 @@ class Agent:
             logger.info(f"{description} took {elapsed:.2f} seconds")
 
     # Main Control Flow Methods
-    async def execute(self, url: Optional[str] = None, headless: bool = False) -> None:
+    async def execute(self, headless: bool = False) -> None:
         """Launch the agent with the specified URL or default URL."""
-        target_url = url or self.default_url
-        await self.browser.launch(target_url, headless)
+        await self.browser.launch(self.initial_url, headless)
         await self._execute_agent_loop()
         await self.browser.terminate()
 
@@ -187,7 +186,7 @@ class Agent:
             "objective": self.objective,
             "action_model": self.action_model,
             "planning_model": self.planning_model,
-            "default_url": self.default_url,
+            "initial_url": self.initial_url,
             "iterations": self.iteration,
             "final_response": final_response,
             "execution_time": time.time() - self.start_time,
@@ -232,7 +231,6 @@ class Agent:
 
         # Prepare and send message
         messages = [self.message_history[0], user_message]
-
         tool_call_message = await self.llm_client.make_call(
             messages, self.action_model, tools=TOOLS
         )

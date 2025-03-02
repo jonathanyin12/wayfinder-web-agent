@@ -171,6 +171,7 @@ cython_debug/
 .pypirc
 
 
-*.txt
-*.png
-*.json
+
+runs/
+eval/webvoyager/
+

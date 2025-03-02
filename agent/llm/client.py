@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage

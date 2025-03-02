@@ -6,7 +6,7 @@ page navigation, and interaction with web elements through various actions.
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from playwright.async_api import (
     Browser,

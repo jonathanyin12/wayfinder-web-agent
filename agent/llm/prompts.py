@@ -18,7 +18,7 @@ class PromptManager:
         """Returns the system prompt for the agent"""
         return f"""You are a helpful web browsing assistant.
 
-Here is your ultimate objective: {self.objective}.
+Here is your ultimate objective: {self.objective}
 
 POSSIBLE ACTIONS:
 - click_element: click a specific element on the page
@@ -68,7 +68,8 @@ Interactable elements that are currently visible (element_id: element_html):
 TASK:
 1. Provide a brief summary of key information relevant to the task from the current page.
 
-2. Suggest anappropriate next step given the current state of the page and the overall objective.
+2. Suggest an appropriate next step given the current state of the page and the overall objective.
+- Suggest a short action sequences (< 3 actions) rather than a broad goal. The actions you can take are listed under POSSIBLE ACTIONS.
 
 Respond with a JSON object with the following fields:
 {{
@@ -102,7 +103,7 @@ TASK:
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
 4. Suggest an appropriate next step given the current state of the page and the overall objective.
-- Suggest potential short action sequences rather than broad goals. The actions you can take are listed under POSSIBLE ACTIONS.
+- Suggest a short action sequences (< 3 actions) rather than a broad goal. The actions you can take are listed under POSSIBLE ACTIONS.
 - If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
 - If the objective is fully complete, the next step should be to end the task.
 
