@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List, TypedDict
 
 sys.path.append(".")
-from agent.agent import Agent
+from agent.react_agent import ReActAgent
 
 
 class TaskData(TypedDict):
@@ -19,7 +19,7 @@ class TaskData(TypedDict):
 
 async def run_task(task: TaskData, model_provider: str, output_dir: str) -> None:
     print(f"Running task {task['id']}")
-    agent = Agent(
+    agent = ReActAgent(
         objective=task["ques"],
         initial_url=task["web"],
         output_dir=f"{output_dir}/{task['id']}",

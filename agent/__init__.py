@@ -1,3 +1,3 @@
-from .agent import Agent
+from .react_agent import ReActAgent
 
-__all__ = ["Agent"]
+__all__ = ["ReActAgent"]

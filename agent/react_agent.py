@@ -22,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class Agent:
+class ReActAgent:
     # Configuration and Initialization
     def __init__(
         self,
