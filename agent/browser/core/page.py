@@ -7,7 +7,11 @@ from urllib.parse import urlparse
 
 from playwright.async_api import Page
 
-from agent.browser.utils.annotation import annotate_page, clear_annotations
+from agent.browser.utils.annotation import (
+    annotate_page,
+    clear_annotations,
+    get_element_descriptions,
+)
 from agent.browser.utils.page_state import get_pixels_above_below
 from agent.browser.utils.screenshot import take_screenshot
 from agent.llm.client import LLMClient
@@ -39,6 +43,7 @@ class AgentBrowserPage:
         self.llm_client = llm_client
         self.label_selectors = {}
         self.label_simplified_htmls = {}
+        self.element_descriptions = {}
         self.previous_screenshot_base64 = ""
         self.current_screenshot_base64 = ""
         self.current_screenshot_annotated_base64 = ""
@@ -103,6 +108,12 @@ class AgentBrowserPage:
             save_path=f"{self.output_dir}/annotated_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
         await clear_annotations(self.page)
+        self.element_descriptions = await get_element_descriptions(
+            self.page,
+            self.label_selectors,
+            self.label_simplified_htmls,
+            self.output_dir,
+        )
 
     def get_base_url(self) -> str:
         """

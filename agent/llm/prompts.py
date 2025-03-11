@@ -41,7 +41,7 @@ POSSIBLE ACTIONS:
         pixels_above, pixels_below = await page.get_pixels_above_below()
         page_position = get_formatted_page_position(pixels_above, pixels_below)
         interactable_elements = get_formatted_interactable_elements(
-            pixels_above, pixels_below, page.label_simplified_htmls
+            pixels_above, pixels_below, page.element_descriptions
         )
         base_url = page.get_base_url()
         shortened_url = page.get_shortened_url()
@@ -125,7 +125,7 @@ Respond with a JSON object with the following fields:
         pixels_above, pixels_below = await page.get_pixels_above_below()
         page_position = get_formatted_page_position(pixels_above, pixels_below)
         interactable_elements = get_formatted_interactable_elements(
-            pixels_above, pixels_below, page.label_simplified_htmls
+            pixels_above, pixels_below, page.element_descriptions
         )
         base_url = page.get_base_url()
         shortened_url = page.get_shortened_url()
@@ -207,14 +207,14 @@ Important Notes:
 
 
 def get_formatted_interactable_elements(
-    pixels_above, pixels_below, label_simplified_htmls
+    pixels_above, pixels_below, element_descriptions
 ) -> str:
     """
     Get a formatted string of interactable elements on the page.
 
     Args:
         page: The Playwright page
-        label_simplified_htmls: Dictionary of labeled HTML elements
+        element_descriptions: Dictionary of labeled HTML elements
         pixels_above_below: Tuple containing (pixels_above, pixels_below)
 
     Returns:
@@ -223,7 +223,7 @@ def get_formatted_interactable_elements(
     has_content_above = pixels_above > 0
     has_content_below = pixels_below > 0
 
-    elements_text = json.dumps(label_simplified_htmls, indent=4)
+    elements_text = json.dumps(element_descriptions, indent=4)
     if elements_text:
         if has_content_above:
             elements_text = f"... {pixels_above} pixels above - scroll up or extract info to see more ...\n{elements_text}"

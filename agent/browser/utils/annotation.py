@@ -2,9 +2,15 @@
 Annotation actions for labeling and identifying interactive elements on web pages.
 """
 
-from typing import Dict, Tuple
+import asyncio
+from typing import Dict, Optional, Tuple
 
 from playwright.async_api import Page
+
+from agent.browser.utils.screenshot import take_element_screenshot, take_screenshot
+from agent.llm.client import LLMClient
+
+llm_client = LLMClient()
 
 # JavaScript template for annotating page elements
 ANNOTATE_PAGE_TEMPLATE = r"""() => {
@@ -266,6 +272,81 @@ async def annotate_page(page: Page) -> Tuple[Dict[int, str], Dict[int, str]]:
     return label_selectors, label_simplified_htmls
 
 
+async def annotate_page_with_single_element(page: Page, label_selector: str) -> None:
+    """
+    Annotate the page with a single element.
+
+    Args:
+        page: The Playwright page
+        label_selector: The CSS selector for the element to annotate
+    """
+    await page.evaluate(
+        """(selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return;
+        
+        // Special handling for input elements
+        let targetElement = element;
+        if (element.tagName.toLowerCase() === 'input' && 
+            (element.type === 'radio' || element.type === 'checkbox')) {
+            // Find parent with label
+            function getParentWithLabel(element) {
+                // If input has an associated label via 'for' attribute
+                if (element.id) {
+                    const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+                    if (associatedLabel) {
+                        // Find common parent of input and label
+                        let inputParent = element.parentElement;
+                        while (inputParent) {
+                            if (inputParent.contains(associatedLabel)) {
+                                return inputParent;
+                            }
+                            inputParent = inputParent.parentElement;
+                        }
+                    }
+                }
+                
+                // If input is wrapped in a label
+                let parent = element.parentElement;
+                while (parent) {
+                    if (parent.tagName.toLowerCase() === 'label') {
+                        return parent;
+                    }
+                    // Check if parent contains a label for this input
+                    const childLabels = parent.getElementsByTagName('label');
+                    for (const label of childLabels) {
+                        if (label.getAttribute('for') === element.id || label.contains(element)) {
+                            return parent;
+                        }
+                    }
+                    parent = parent.parentElement;
+                }
+                
+                return element; // fallback to the element itself
+            }
+            
+            targetElement = getParentWithLabel(element);
+        }
+        
+        const rect = targetElement.getBoundingClientRect();
+        
+        const box = document.createElement("div");
+        box.className = "GWA-rect";
+        box.style.position = "absolute";
+        box.style.border = "2px solid red";
+        box.style.top = `${rect.top}px`;
+        box.style.left = `${rect.left}px`;
+        box.style.width = `${rect.width}px`;
+        box.style.height = `${rect.height}px`;
+        box.style.zIndex = 10000;
+        box.style.pointerEvents = "none";
+        
+        document.body.appendChild(box);
+    }""",
+        label_selector,
+    )
+
+
 CLEAR_PAGE_TEMPLATE = """() => {
     const removeElementsByClass = (className) => {
         const elements = Array.from(document.querySelectorAll(className));
@@ -286,3 +367,98 @@ async def clear_annotations(page: Page) -> None:
         page: The Playwright page
     """
     await page.evaluate(CLEAR_PAGE_TEMPLATE)
+
+
+async def get_element_descriptions(
+    page, label_selectors, label_simplified_htmls, output_dir
+) -> Dict[int, str]:
+    """
+    Get descriptions for all annotated elements on the page in parallel.
+
+    Returns:
+        A dictionary mapping element IDs to their descriptions
+    """
+
+    # Process all elements in parallel
+    tasks = []
+    for element_id, selector in label_selectors.items():
+        await annotate_page_with_single_element(page, selector)
+        page_screenshot_base64 = await take_screenshot(
+            page,
+            # save_path=f"{output_dir}/annotated_screenshots/{element_id}_{uuid.uuid4()}.png",
+        )
+        await clear_annotations(page)
+        simplified_html = label_simplified_htmls[element_id]
+        tasks.append(
+            (
+                element_id,
+                get_element_description(
+                    page,
+                    selector,
+                    simplified_html,
+                    page_screenshot_base64,
+                    # save_path=f"{output_dir}/annotated_screenshots/{element_id}_{uuid.uuid4()}.png",
+                ),
+            )
+        )
+
+    # Execute all tasks concurrently
+    results = await asyncio.gather(*[task for _, task in tasks])
+
+    # Map results to element IDs
+    element_descriptions = {
+        element_id: result for (element_id, _), result in zip(tasks, results)
+    }
+
+    return element_descriptions
+
+
+async def get_element_description(
+    page: Page,
+    selector: str,
+    simplified_html: str,
+    page_screenshot: str,
+    save_path: Optional[str] = None,
+) -> str:
+    """
+    Get a description for a single element on the page.
+    """
+    element_screenshot = await take_element_screenshot(
+        page,
+        selector,
+        save_path=save_path,
+    )
+
+    if not element_screenshot:
+        raise ValueError("No element screenshot")
+
+    prompt = f"""Describe the element and it's purpose in the screenshot:
+
+The first screenshot is the entire page with the element highlighted with a red bounding box.
+The second screenshot is the element in question.
+
+The element is described by the following HTML:
+{simplified_html}
+
+
+Output a very brief description of the element and it's purpose. Provide additional context about the element if necessary e.g. if there are multiple elements that look similar, describe the differences.
+
+Example outputs:
+'Add to Cart' button for the 13 inch MacBook Pro
+Empty search bar at the top of the page
+Link to the privacy policy
+Button to select the color 'blue'. It is currently selected.
+
+Consider the context of the page when describing the element. For instance, if the element is a selector and has an outline around it, it is most likely selected.
+"""
+
+    user_message = llm_client.create_user_message_with_images(
+        prompt, [page_screenshot, element_screenshot], "low"
+    )
+    response = await llm_client.make_call(
+        [user_message], "gpt-4o-mini", timeout=10, json_format=False
+    )
+    if not response.content:
+        return simplified_html
+
+    return response.content
