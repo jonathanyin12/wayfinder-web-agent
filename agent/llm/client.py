@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion_content_part_image_param import (
     ChatCompletionContentPartImageParam,
@@ -35,7 +35,10 @@ class LLMClient:
     token_usage = {}
 
     def __init__(self):
-        self.client = AsyncOpenAI()
+        self.client = AsyncAzureOpenAI(
+            api_version="2025-01-01-preview",
+            azure_endpoint="https://jonathan-research.openai.azure.com",
+        )
         self.max_retries = 3
 
     async def make_call(
