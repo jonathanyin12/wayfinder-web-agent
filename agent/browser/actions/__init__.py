@@ -3,11 +3,11 @@ Browser action modules for interacting with web pages.
 """
 
 from ..utils import annotation, screenshot
-from . import extract, input, interaction, navigation, scroll
+from . import input, interaction, navigation, scroll, search
 
 __all__ = [
     "annotation",
-    "extract",
+    "search",
     "input",
     "interaction",
     "navigation",

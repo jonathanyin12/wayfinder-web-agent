@@ -23,8 +23,8 @@ Here is your ultimate objective: {self.objective}
 POSSIBLE ACTIONS:
 - click_element: click a specific element on the page
 - type_text: type text into a text box on the page and optionally submit the text
-- extract_info: extract textual information from the page (note: this extracts textual information from the entire page, not just the visible portion, so you don't need to scroll before using this action)
-- scroll: scroll up or down on the page
+- search_page: search the entire page for relevant information. This is the preferred way to find textual information on a page.
+- scroll: scroll up or down on the page. Use this to find interactable elements (i.e. buttons, links, etc.) that are not currently visible in the current viewport.
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
 - switch_tab: switch to a different tab
@@ -66,10 +66,9 @@ Interactable elements that are currently visible (element_id: element_html):
 
 
 TASK:
-1. Provide a brief summary of key information relevant to the task from the current page.
+1. Provide a brief summary of the current page. Focus on new information.
 
 2. Suggest an appropriate next step given the current state of the page and the overall objective.
-- Suggest a short action sequences (< 3 actions) rather than a broad goal. The actions you can take are listed under POSSIBLE ACTIONS.
 
 Respond with a JSON object with the following fields:
 {{
@@ -94,7 +93,7 @@ Interactable elements that are currently visible (element_id: element_html):
 
 
 TASK:
-1. Provide a brief summary of new key information relevant to the task from the current page. 
+1. Provide a brief summary of the current page (screenshot 2). Focus on new information.
 
 2. Reason about whether the last action was successful or not.
 - Carefully compare the before and after screenshots to verify whether the action was successful. Consider what UX changes are expected for the action you took.
@@ -103,7 +102,6 @@ TASK:
 3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
 
 4. Suggest an appropriate next step given the current state of the page and the overall objective.
-- Suggest a short action sequences (< 3 actions) rather than a broad goal. The actions you can take are listed under POSSIBLE ACTIONS.
 - If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
 - If the objective is fully complete, the next step should be to end the task.
 
@@ -157,12 +155,10 @@ Interactable elements that are currently visible (element_id: element_html):
 PROGRESS:
 {progress}
 
-REQUESTED NEXT STEP:
-{next_step}
-
 
 TASK:
-Select a single action that best progresses or completes the requested next step
+Select a single action that best completes the next step: 
+"{next_step}"
 
 Important Notes:
 - If the next step requires multiple actions, choose only the first necessary action
@@ -183,7 +179,7 @@ Important Notes:
         ]
 
         user_message = self.llm_client.create_user_message_with_images(
-            planning_prompt, images, detail="low"
+            planning_prompt, images, detail="high"
         )
         return user_message
 
@@ -226,11 +222,11 @@ def get_formatted_interactable_elements(
     elements_text = json.dumps(element_descriptions, indent=4)
     if elements_text:
         if has_content_above:
-            elements_text = f"... {pixels_above} pixels above - scroll up or extract info to see more ...\n{elements_text}"
+            elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"
         else:
             elements_text = f"[Top of page]\n{elements_text}"
         if has_content_below:
-            elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down or extract info to see more ..."
+            elements_text = f"{elements_text}\n... {pixels_below} pixels below - scroll down to see more ..."
         else:
             elements_text = f"{elements_text}\n[Bottom of page]"
     else:

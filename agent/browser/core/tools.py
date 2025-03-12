@@ -68,17 +68,17 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "extract_info",
-            "description": "Extract textual information from the entire page relevant to the objective.",
+            "name": "search_page",
+            "description": "Search the entire page for information relevant to the query.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "objective": {
+                    "query": {
                         "type": "string",
-                        "description": "The objective or goal for information extraction.",
+                        "description": "The information to search for. This should be as detailed and specific as possible.",
                     }
                 },
-                "required": ["objective"],
+                "required": ["query"],
                 "additionalProperties": False,
             },
             "strict": True,
