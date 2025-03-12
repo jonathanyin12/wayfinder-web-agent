@@ -37,7 +37,10 @@ async def go_back(page: Page):
     Args:
         page: The Playwright page
     """
+    previous_url = page.url
     await page.go_back()
+    if page.url == previous_url:
+        await page.go_back()
 
 
 async def go_forward(page: Page):
@@ -47,4 +50,7 @@ async def go_forward(page: Page):
     Args:
         page: The Playwright page
     """
+    previous_url = page.url
     await page.go_forward()
+    if page.url == previous_url:
+        await page.go_forward()
