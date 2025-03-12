@@ -200,9 +200,7 @@ Respond with a JSON object:
         )
 
         # Make the LLM call with gpt-4o-mini
-        response = await self.llm_client.make_call(
-            [user_message], "gpt-4o-mini", timeout=10
-        )
+        response = await self.llm_client.make_call([user_message], "gpt-4o", timeout=10)
         if not response.content:
             raise ValueError("Empty response content")
         response_json = json.loads(response.content)

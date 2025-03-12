@@ -456,7 +456,7 @@ Consider the context of the page when describing the element. For instance, if t
         prompt, [page_screenshot, element_screenshot], "low"
     )
     response = await llm_client.make_call(
-        [user_message], "gpt-4o-mini", timeout=10, json_format=False
+        [user_message], "gpt-4o", timeout=10, json_format=False
     )
     if not response.content:
         return simplified_html
