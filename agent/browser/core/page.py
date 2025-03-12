@@ -10,10 +10,10 @@ from playwright.async_api import Page
 from agent.browser.utils.annotation import (
     annotate_page,
     clear_annotations,
-    get_element_descriptions,
 )
 from agent.browser.utils.page_state import get_pixels_above_below
 from agent.browser.utils.screenshot import take_screenshot
+from agent.browser.utils.semantic_labels import get_element_descriptions
 from agent.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -199,7 +199,6 @@ Respond with a JSON object:
             captcha_prompt, [self.current_screenshot_base64]
         )
 
-        # Make the LLM call with gpt-4o-mini
         response = await self.llm_client.make_call([user_message], "gpt-4o", timeout=10)
         if not response.content:
             raise ValueError("Empty response content")
