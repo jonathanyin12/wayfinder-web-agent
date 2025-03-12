@@ -266,6 +266,81 @@ async def annotate_page(page: Page) -> Tuple[Dict[int, str], Dict[int, str]]:
     return label_selectors, label_simplified_htmls
 
 
+ANNOTATE_PAGE_WITH_SINGLE_ELEMENT_TEMPLATE = """(selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return;
+        
+        // Special handling for input elements
+        let targetElement = element;
+        if (element.tagName.toLowerCase() === 'input' && 
+            (element.type === 'radio' || element.type === 'checkbox')) {
+            // Find parent with label
+            function getParentWithLabel(element) {
+                // If input has an associated label via 'for' attribute
+                if (element.id) {
+                    const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+                    if (associatedLabel) {
+                        // Find common parent of input and label
+                        let inputParent = element.parentElement;
+                        while (inputParent) {
+                            if (inputParent.contains(associatedLabel)) {
+                                return inputParent;
+                            }
+                            inputParent = inputParent.parentElement;
+                        }
+                    }
+                }
+                
+                // If input is wrapped in a label
+                let parent = element.parentElement;
+                while (parent) {
+                    if (parent.tagName.toLowerCase() === 'label') {
+                        return parent;
+                    }
+                    // Check if parent contains a label for this input
+                    const childLabels = parent.getElementsByTagName('label');
+                    for (const label of childLabels) {
+                        if (label.getAttribute('for') === element.id || label.contains(element)) {
+                            return parent;
+                        }
+                    }
+                    parent = parent.parentElement;
+                }
+                
+                return element; // fallback to the element itself
+            }
+            
+            targetElement = getParentWithLabel(element);
+        }
+        
+        const rect = targetElement.getBoundingClientRect();
+        
+        const box = document.createElement("div");
+        box.className = "GWA-rect";
+        box.style.position = "absolute";
+        box.style.border = "2px solid red";
+        box.style.top = `${rect.top}px`;
+        box.style.left = `${rect.left}px`;
+        box.style.width = `${rect.width}px`;
+        box.style.height = `${rect.height}px`;
+        box.style.zIndex = 10000;
+        box.style.pointerEvents = "none";
+        
+        document.body.appendChild(box);
+    }"""
+
+
+async def annotate_page_with_single_element(page: Page, label_selector: str) -> None:
+    """
+    Annotate the page with a single element.
+
+    Args:
+        page: The Playwright page
+        label_selector: The CSS selector for the element to annotate
+    """
+    await page.evaluate(ANNOTATE_PAGE_WITH_SINGLE_ELEMENT_TEMPLATE, label_selector)
+
+
 CLEAR_PAGE_TEMPLATE = """() => {
     const removeElementsByClass = (className) => {
         const elements = Array.from(document.querySelectorAll(className));
