@@ -57,6 +57,7 @@ class Agent:
 
         self.required_human_input = False
         self.iteration = 0
+        self.max_iterations = 20
 
     @contextlib.asynccontextmanager
     async def _timed_operation(self, description: str):
@@ -79,7 +80,7 @@ class Agent:
         """Main agent loop: observe, plan, and execute actions."""
         logger.info(f"BEGINNING TASK: {self.objective}")
         self.start_time = time.time()
-        while self.iteration < 50:
+        while self.iteration < self.max_iterations:
             self.iteration += 1
 
             # Run captcha check and planning concurrently
@@ -126,8 +127,10 @@ class Agent:
             if action.name == "end":
                 break
 
-        if self.iteration >= 50:
+        if self.iteration >= self.max_iterations:
             logger.info("Max iterations reached. Exiting...")
+            self._save_execution_history("Max iterations reached.")
+
         else:
             logger.info(f"Completed task in {self.iteration} iterations.")
             logger.info(f"Final result: {action.args['final_response']}")
