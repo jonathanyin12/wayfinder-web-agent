@@ -87,7 +87,9 @@ class LLMClient:
             if attempt >= self.max_retries - 1:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
             print(f"Attempt {attempt + 1} failed with error: {str(e)}")
-            return await self.make_call(messages, model, tools, attempt + 1)
+            return await self.make_call(
+                messages, model, tools, attempt + 1, timeout, json_format
+            )
 
     @classmethod
     def get_token_usage(cls) -> Dict[str, Dict[str, int]]:
