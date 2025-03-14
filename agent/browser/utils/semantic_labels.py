@@ -4,8 +4,8 @@ from typing import Dict, Optional
 from playwright.async_api import Page
 
 from agent.browser.utils.annotation import (
-    annotate_page_with_single_element,
-    clear_annotations,
+    annotate_element_by_element_id,
+    clear_bounding_boxes,
 )
 from agent.browser.utils.screenshot import take_element_screenshot, take_screenshot
 from agent.llm.client import LLMClient
@@ -14,7 +14,7 @@ llm_client = LLMClient()
 
 
 async def get_element_descriptions(
-    page, label_selectors, label_simplified_htmls, output_dir
+    page, element_simplified_htmls, output_dir
 ) -> Dict[int, str]:
     """
     Get descriptions for all annotated elements on the page in parallel.
@@ -25,19 +25,18 @@ async def get_element_descriptions(
 
     # Process all elements in parallel
     tasks = []
-    for element_id, selector in label_selectors.items():
-        await annotate_page_with_single_element(page, selector)
+    for element_id, simplified_html in element_simplified_htmls.items():
+        await annotate_element_by_element_id(page, element_id)
         page_screenshot_base64 = await take_screenshot(
             page,
         )
-        await clear_annotations(page)
-        simplified_html = label_simplified_htmls[element_id]
+        await clear_bounding_boxes(page)
         tasks.append(
             (
                 element_id,
                 get_element_description(
                     page,
-                    selector,
+                    element_id,
                     simplified_html,
                     page_screenshot_base64,
                 ),
@@ -57,7 +56,7 @@ async def get_element_descriptions(
 
 async def get_element_description(
     page: Page,
-    selector: str,
+    element_id: str,
     simplified_html: str,
     page_screenshot: str,
     save_path: Optional[str] = None,
@@ -67,7 +66,7 @@ async def get_element_description(
     """
     element_screenshot = await take_element_screenshot(
         page,
-        selector,
+        element_id,
         save_path=save_path,
     )
 
@@ -89,7 +88,7 @@ Example outputs:
 'Add to Cart' button for the 13 inch MacBook Pro
 Empty search bar at the top of the page
 Link to the privacy policy
-Button to select the color 'blue'. It is currently selected.
+Button to select the color 'blue'.
 
 Consider the context of the page when describing the element. For instance, if the element is a selector and has an outline around it, it is most likely selected.
 """

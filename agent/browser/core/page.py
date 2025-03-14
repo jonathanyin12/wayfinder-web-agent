@@ -8,8 +8,9 @@ from urllib.parse import urlparse
 from playwright.async_api import Page
 
 from agent.browser.utils.annotation import (
-    annotate_page,
-    clear_annotations,
+    clear_bounding_boxes,
+    draw_bounding_boxes,
+    find_interactive_elements,
 )
 from agent.browser.utils.page_state import get_pixels_above_below
 from agent.browser.utils.screenshot import take_screenshot
@@ -41,8 +42,7 @@ class AgentBrowserPage:
     def __init__(self, page: Page, llm_client: LLMClient, output_dir: str):
         self.page = page
         self.llm_client = llm_client
-        self.label_selectors = {}
-        self.label_simplified_htmls = {}
+        self.element_simplified_htmls = {}
         self.element_descriptions = {}
         self.previous_screenshot_base64 = ""
         self.current_screenshot_base64 = ""
@@ -72,16 +72,6 @@ class AgentBrowserPage:
                 if not self.page:
                     raise RuntimeError("Browser page is not initialized")
 
-                if "element_id" in kwargs:
-                    selector = self.label_selectors.get(kwargs["element_id"])
-                    if selector:
-                        kwargs["selector"] = selector
-                        del kwargs["element_id"]
-                    else:
-                        raise ValueError(
-                            f"No selector found for element_id: {kwargs['element_id']}"
-                        )
-
                 return await action_func(self.page, *args, **kwargs)
 
             return wrapper
@@ -100,18 +90,17 @@ class AgentBrowserPage:
             self.page,
             save_path=f"{self.output_dir}/screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
-        self.label_selectors, self.label_simplified_htmls = await annotate_page(
-            self.page
-        )
+
+        self.element_simplified_htmls = await find_interactive_elements(self.page)
+        await draw_bounding_boxes(self.page, list(self.element_simplified_htmls.keys()))
         self.current_screenshot_annotated_base64 = await take_screenshot(
             self.page,
             save_path=f"{self.output_dir}/annotated_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
         )
-        await clear_annotations(self.page)
+        await clear_bounding_boxes(self.page)
         self.element_descriptions = await get_element_descriptions(
             self.page,
-            self.label_selectors,
-            self.label_simplified_htmls,
+            self.element_simplified_htmls,
             self.output_dir,
         )
 

@@ -251,7 +251,7 @@ class Agent:
             name=function_name,
             html_element=self.browser.pages[
                 self.browser.current_page_index
-            ].label_simplified_htmls.get(args.get("element_id", -1), ""),
+            ].element_simplified_htmls.get(args.get("element_id", -1), ""),
             element_description=self.browser.pages[
                 self.browser.current_page_index
             ].element_descriptions.get(args.get("element_id", -1), ""),

@@ -2,15 +2,19 @@
 Annotation actions for labeling and identifying interactive elements on web pages.
 """
 
-from typing import Dict, Tuple
+from typing import Dict, List
 
 from playwright.async_api import Page
 
-# JavaScript template for annotating page elements
-ANNOTATE_PAGE_TEMPLATE = r"""() => {
+# JavaScript template for finding and identifying interactive elements
+FIND_INTERACTIVE_ELEMENTS_TEMPLATE = r"""() => {
+    // Remove any existing data-gwa-id attributes to avoid duplicates
+    document.querySelectorAll('[data-gwa-id]').forEach(el => {
+        el.removeAttribute('data-gwa-id');
+    });
+
     const elements = Array.from(document.querySelectorAll("a, button, input, textarea, select"));
-    let label_selectors = {};
-    let label_simplified_htmls = {};
+    let element_simplified_htmls = {}; // HTML for each element index
 
     function isHiddenByAncestors(element) {
         while (element) {
@@ -23,28 +27,40 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         return false;
     }
 
-    const getCssSelector = (element) => {
-        if (element === null) return "";
-        let path = [];
-        while (element && element.nodeType === Node.ELEMENT_NODE) {
-            let selector = element.nodeName.toLowerCase();
-            if (element.id) {
-                selector += "#" + CSS.escape(element.id);
-                path.unshift(selector);
-                break;
-            } else {
-                let sib = element;
-                let nth = 1;
-                while ((sib = sib.previousElementSibling)) {
-                    if (sib.nodeName.toLowerCase() == selector) nth++;
+    function getParentWithLabel(element) {
+        // If input has an associated label via 'for' attribute
+        if (element.id) {
+            const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+            if (associatedLabel) {
+                // Find common parent of input and label
+                let inputParent = element.parentElement;
+                while (inputParent) {
+                    if (inputParent.contains(associatedLabel)) {
+                        return inputParent;
+                    }
+                    inputParent = inputParent.parentElement;
                 }
-                if (nth != 1) selector += ":nth-of-type(" + nth + ")";
             }
-            path.unshift(selector);
-            element = element.parentNode;
         }
-        return path.join(" > ");
-    };
+        
+        // If input is wrapped in a label
+        let parent = element.parentElement;
+        while (parent) {
+            if (parent.tagName.toLowerCase() === 'label') {
+                return parent;
+            }
+            // Check if parent contains a label for this input
+            const childLabels = parent.getElementsByTagName('label');
+            for (const label of childLabels) {
+                if (label.getAttribute('for') === element.id || label.contains(element)) {
+                    return parent;
+                }
+            }
+            parent = parent.parentElement;
+        }
+        
+        return element; // fallback to the element itself
+    }
 
     function isElementVisible(element) {
         const rect = element.getBoundingClientRect();
@@ -70,6 +86,17 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             element.offsetWidth <= 1 || element.offsetHeight <= 1 ||
             style.visibility === 'hidden' || style.display === 'none')) {
             return false;
+        }
+
+        // For small form elements, check parent element dimensions
+        if (isSmallFormElement) {
+            const parentWithLabel = getParentWithLabel(element);
+            if (parentWithLabel !== element) {
+                const parentRect = parentWithLabel.getBoundingClientRect();
+                if (parentRect.width <= 1 || parentRect.height <= 1) {
+                    return false;
+                }
+            }
         }
 
         // Check if element is covered by other elements
@@ -118,41 +145,6 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
         );
     }
 
-    function getParentWithLabel(element) {
-        // If input has an associated label via 'for' attribute
-        if (element.id) {
-            const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
-            if (associatedLabel) {
-                // Find common parent of input and label
-                let inputParent = element.parentElement;
-                while (inputParent) {
-                    if (inputParent.contains(associatedLabel)) {
-                        return inputParent;
-                    }
-                    inputParent = inputParent.parentElement;
-                }
-            }
-        }
-        
-        // If input is wrapped in a label
-        let parent = element.parentElement;
-        while (parent) {
-            if (parent.tagName.toLowerCase() === 'label') {
-                return parent;
-            }
-            // Check if parent contains a label for this input
-            const childLabels = parent.getElementsByTagName('label');
-            for (const label of childLabels) {
-                if (label.getAttribute('for') === element.id || label.contains(element)) {
-                    return parent;
-                }
-            }
-            parent = parent.parentElement;
-        }
-        
-        return element; // fallback to the element itself
-    }
-
     let visibleIndex = 0;
     elements.forEach((element) => {
         if (isElementVisible(element)) {
@@ -198,166 +190,155 @@ ANNOTATE_PAGE_TEMPLATE = r"""() => {
             simplified_html = simplified_html + '>' + innerText + '</' + tagName + '>';
             simplified_html = simplified_html.replace(/\s+/g, ' ').trim();
 
-            // Keep the original selector pointing to the input element
-            const cssSelector = getCssSelector(element);
-            label_selectors[visibleIndex] = cssSelector;
-            label_simplified_htmls[visibleIndex] = simplified_html;
-
-            // Only use parent for visual display
-            const targetElement = element.tagName.toLowerCase() === 'input' &&
-                (element.type === 'radio' || element.type === 'checkbox') ?
-                getParentWithLabel(element) : element;
-
-            // Draw rectangle using parent dimensions
-            const rect = targetElement.getBoundingClientRect();
-            const adjustedTop = rect.top + window.scrollY;
-            const adjustedLeft = rect.left + window.scrollX;
-
-            const newElement = document.createElement('div');
-            newElement.className = 'GWA-rect';
-            newElement.style.border = '2px solid brown';
-            newElement.style.position = 'absolute';
-            newElement.style.top = `${adjustedTop}px`;
-            newElement.style.left = `${adjustedLeft}px`;
-            newElement.style.width = `${rect.width}px`;
-            newElement.style.height = `${rect.height}px`;
-            newElement.style.zIndex = 10000;
-            newElement.style.pointerEvents = 'none';
-            document.body.appendChild(newElement);
-
-            const label = document.createElement("span");
-            label.className = "GWA-label";
-            label.textContent = visibleIndex;
-            label.style.position = "absolute";
-            label.style.lineHeight = "16px";
-            label.style.padding = "1px";
-            label.style.top = `${adjustedTop}px`;
-            label.style.left = `${adjustedLeft}px`;
-            label.style.color = "white";
-            label.style.fontWeight = "bold";
-            label.style.fontSize = "16px";
-            label.style.backgroundColor = "brown";
-            label.style.zIndex = 10000;
-            document.body.appendChild(label);
+            // Determine the element to which we'll add the data-gwa-id attribute
+            let targetElement = element;
+            
+            // For input elements, especially checkboxes and radio buttons, 
+            // use the parent element that contains the label
+            if (tagName === 'input' && (element.type === 'radio' || element.type === 'checkbox')) {
+                targetElement = getParentWithLabel(element);
+            } else if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+                // For other form elements, check if there's a direct label to use
+                if (element.id) {
+                    const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
+                    if (associatedLabel) {
+                        targetElement = associatedLabel;
+                    }
+                } else if (element.parentElement && element.parentElement.tagName.toLowerCase() === 'label') {
+                    targetElement = element.parentElement;
+                }
+            }
+            
+            // Set a data attribute to uniquely identify the element using the visible index
+            targetElement.setAttribute('data-gwa-id', `gwa-element-${visibleIndex}`);
+            
+            // Store simplified HTML with visible index as key
+            element_simplified_htmls[visibleIndex] = simplified_html;
 
             visibleIndex++;
         }
     });
-    return [label_selectors, label_simplified_htmls];
+    return element_simplified_htmls;
 }"""
 
+# JavaScript template for drawing bounding boxes around annotated elements
+DRAW_BOUNDING_BOXES_TEMPLATE = r"""(indices) => {
+    // If no indices provided, draw boxes for all elements with data-gwa-id
+    if (!indices || indices.length === 0) {
+        indices = Array.from(document.querySelectorAll('[data-gwa-id]')).map(el => {
+            const id = el.getAttribute('data-gwa-id');
+            return parseInt(id.replace('gwa-element-', ''));
+        });
+    }
 
-async def annotate_page(page: Page) -> Tuple[Dict[int, str], Dict[int, str]]:
-    """
-    Annotate the page with labels for interactive elements.
-
-    Args:
-        page: The Playwright page
-
-    Returns:
-        A tuple containing (label_selectors, label_simplified_htmls) with integer keys
-    """
-    selectors_dict, html_dict = await page.evaluate(ANNOTATE_PAGE_TEMPLATE)
-
-    # Convert string keys to integers
-    label_selectors = {int(k): v for k, v in selectors_dict.items()}
-    label_simplified_htmls = {int(k): v for k, v in html_dict.items()}
-
-    return label_selectors, label_simplified_htmls
-
-
-ANNOTATE_PAGE_WITH_SINGLE_ELEMENT_TEMPLATE = """(selector) => {
-        const element = document.querySelector(selector);
-        if (!element) return;
-        
-        // Special handling for input elements
-        let targetElement = element;
-        if (element.tagName.toLowerCase() === 'input' && 
-            (element.type === 'radio' || element.type === 'checkbox')) {
-            // Find parent with label
-            function getParentWithLabel(element) {
-                // If input has an associated label via 'for' attribute
-                if (element.id) {
-                    const associatedLabel = document.querySelector(`label[for="${element.id}"]`);
-                    if (associatedLabel) {
-                        // Find common parent of input and label
-                        let inputParent = element.parentElement;
-                        while (inputParent) {
-                            if (inputParent.contains(associatedLabel)) {
-                                return inputParent;
-                            }
-                            inputParent = inputParent.parentElement;
-                        }
-                    }
-                }
-                
-                // If input is wrapped in a label
-                let parent = element.parentElement;
-                while (parent) {
-                    if (parent.tagName.toLowerCase() === 'label') {
-                        return parent;
-                    }
-                    // Check if parent contains a label for this input
-                    const childLabels = parent.getElementsByTagName('label');
-                    for (const label of childLabels) {
-                        if (label.getAttribute('for') === element.id || label.contains(element)) {
-                            return parent;
-                        }
-                    }
-                    parent = parent.parentElement;
-                }
-                
-                return element; // fallback to the element itself
-            }
-            
-            targetElement = getParentWithLabel(element);
-        }
-        
-        const rect = targetElement.getBoundingClientRect();
-        
-        const box = document.createElement("div");
-        box.className = "GWA-rect";
-        box.style.position = "absolute";
-        box.style.border = "2px solid red";
-        box.style.top = `${rect.top}px`;
-        box.style.left = `${rect.left}px`;
-        box.style.width = `${rect.width}px`;
-        box.style.height = `${rect.height}px`;
-        box.style.zIndex = 10000;
-        box.style.pointerEvents = "none";
-        
-        document.body.appendChild(box);
-    }"""
-
-
-async def annotate_page_with_single_element(page: Page, label_selector: str) -> None:
-    """
-    Annotate the page with a single element.
-
-    Args:
-        page: The Playwright page
-        label_selector: The CSS selector for the element to annotate
-    """
-    await page.evaluate(ANNOTATE_PAGE_WITH_SINGLE_ELEMENT_TEMPLATE, label_selector)
-
-
-CLEAR_PAGE_TEMPLATE = """() => {
+    // Clear any existing annotations first
     const removeElementsByClass = (className) => {
         const elements = Array.from(document.querySelectorAll(className));
-        elements.forEach((element, index) => {
+        elements.forEach(element => {
             element.remove();
         });
     };
     removeElementsByClass(".GWA-rect");
     removeElementsByClass(".GWA-label");
+
+    // Draw new annotations
+    indices.forEach(index => {
+        const element = document.querySelector(`[data-gwa-id="gwa-element-${index}"]`);
+        if (!element) return;
+
+        const rect = element.getBoundingClientRect();
+        const adjustedTop = rect.top + window.scrollY;
+        const adjustedLeft = rect.left + window.scrollX;
+
+        // Create rectangle around element
+        const newElement = document.createElement('div');
+        newElement.className = 'GWA-rect';
+        newElement.style.border = '2px solid brown';
+        newElement.style.position = 'absolute';
+        newElement.style.top = `${adjustedTop}px`;
+        newElement.style.left = `${adjustedLeft}px`;
+        newElement.style.width = `${rect.width}px`;
+        newElement.style.height = `${rect.height}px`;
+        newElement.style.zIndex = 10000;
+        newElement.style.pointerEvents = 'none';
+        document.body.appendChild(newElement);
+
+        // Create label with index number
+        const label = document.createElement("span");
+        label.className = "GWA-label";
+        label.textContent = index;
+        label.style.position = "absolute";
+        label.style.lineHeight = "16px";
+        label.style.padding = "1px";
+        label.style.top = `${adjustedTop}px`;
+        label.style.left = `${adjustedLeft}px`;
+        label.style.color = "white";
+        label.style.fontWeight = "bold";
+        label.style.fontSize = "16px";
+        label.style.backgroundColor = "brown";
+        label.style.zIndex = 10000;
+        document.body.appendChild(label);
+    });
+    
+    return indices.length;
 }"""
 
 
-async def clear_annotations(page: Page) -> None:
+async def find_interactive_elements(page: Page) -> Dict[int, str]:
     """
-    Clear any annotations from the page.
+    Find and identify interactive elements on the page.
+    This function adds data-gwa-id attributes to elements but does not draw visual annotations.
+
+    Args:
+        page: The Playwright page
+
+    Returns:
+        A dictionary mapping visible indices to simplified HTML representations
+    """
+
+    html_dict = await page.evaluate(FIND_INTERACTIVE_ELEMENTS_TEMPLATE)
+
+    # Convert string keys to integers
+    element_simplified_htmls = {int(k): v for k, v in html_dict.items()}
+
+    return element_simplified_htmls
+
+
+async def draw_bounding_boxes(page: Page, indices: List[int]) -> int:
+    """
+    Draw bounding boxes around elements with data-gwa-id attributes.
+
+    Args:
+        page: The Playwright page
+        indices: List of specific element indices to annotate.
+
+    Returns:
+        Number of elements that were annotated
+    """
+    return await page.evaluate(DRAW_BOUNDING_BOXES_TEMPLATE, indices)
+
+
+async def annotate_element_by_element_id(page: Page, element_id: int) -> None:
+    """
+    Draw a bounding box around the element with the specified index.
+
+    Args:
+        page: The Playwright page
+        element_id: The unique GWA ID of the element to annotate
+    """
+    await draw_bounding_boxes(page, [element_id])
+
+
+async def clear_bounding_boxes(page: Page) -> None:
+    """
+    Clear any bounding boxes from the page.
+    Note: This does not remove the data-gwa-id attributes.
 
     Args:
         page: The Playwright page
     """
-    await page.evaluate(CLEAR_PAGE_TEMPLATE)
+    await page.evaluate(
+        "() => { "
+        + "Array.from(document.querySelectorAll('.GWA-rect, .GWA-label')).forEach(el => el.remove());"
+        + " }"
+    )

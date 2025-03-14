@@ -23,7 +23,7 @@ Here is your ultimate objective: {self.objective}
 POSSIBLE ACTIONS:
 - click_element: click a specific element on the page
 - type_text: type text into a text box on the page and optionally submit the text
-- search_page: search the entire page for relevant information. This is the preferred way to find textual information on a page.
+- search_page: tool to search the entire page for specific information. This is the preferred way to find information on a page.
 - scroll: scroll up or down on the page. Use this to find interactable elements (i.e. buttons, links, etc.) that are not currently visible in the current viewport.
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
@@ -68,7 +68,7 @@ Interactable elements that are currently visible (element_id: element_html):
 TASK:
 1. Provide a brief summary of the current page. Focus on new information.
 
-2. Suggest an appropriate next step given the current state of the page and the overall objective.
+2. Suggest a single next step given the current state of the page and the overall objective.
 
 Respond with a JSON object with the following fields:
 {{
@@ -99,11 +99,10 @@ TASK:
 - Carefully compare the before and after screenshots to verify whether the action was successful. Consider what UX changes are expected for the action you took.
 - If an action is not successful, try to reason about what went wrong and what you can do differently. e.g. if you clicked on an element but it didn't change state, it may have already been selected or in the desired state. If you tried to scroll but the page didn't move, it may be the end of the page or the page is not scrollable.
 
-3. Summarize what has been accomplished since the beginning. Also, broadly describe what else is remaining of the overall objective.
+3. Summarize what has been accomplished since the beginning.
 
-4. Suggest an appropriate next step given the current state of the page and the overall objective.
-- If you are stuck, try alternative approaches. DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. 
-- If the objective is fully complete, the next step should be to end the task.
+4. Suggest a single next step given the current state of the page and the overall objective.
+- If the objective is fully completed, the next step should be to end the task.
 
 Respond with a JSON object with the following fields:
 {{

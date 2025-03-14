@@ -30,20 +30,21 @@ async def take_screenshot(
 
 
 async def take_element_screenshot(
-    page: Page, selector: str, save_path: Optional[str] = None
+    page: Page, element_id: str, save_path: Optional[str] = None
 ) -> Optional[str]:
     """
     Take a screenshot of a specific element on the page.
 
     Args:
         page: The Playwright page
-        selector: CSS selector for the element to capture
+        element_id: The unique GWA ID for the element to capture
         save_path: Path to save the screenshot
 
     Returns:
         Base64-encoded string of the screenshot, or None if element not found
     """
     # First try to find the element directly
+    selector = f'[data-gwa-id="gwa-element-{element_id}"]'
     element = await page.query_selector(selector)
 
     if not element:
@@ -55,11 +56,11 @@ async def take_element_screenshot(
                   (element.type === 'radio' || element.type === 'checkbox')
     """)
 
-    if is_special_input:
+    if is_special_input and False:
         # Find the target element using the original algorithm
         target_selector = await page.evaluate(
-            """(selector) => {
-            const element = document.querySelector(selector);
+            """(element_id) => {
+            const element = document.querySelector(`[data-gwa-id="gwa-element-${element_id}"]`);
             
             // Find parent with label
             function getParentWithLabel(element) {
@@ -137,14 +138,16 @@ async def take_element_screenshot(
             const targetSelector = generateSelector(target);
             return targetSelector || selector; // fallback to original selector if generation fails
         }""",
-            selector,
+            element_id,
         )
 
         # Use the identified target selector
-        if target_selector and target_selector != selector:
+        if target_selector:
             element = await page.query_selector(target_selector)
             if not element:
-                element = await page.query_selector(selector)  # Fallback
+                element = await page.query_selector(
+                    f'[data-gwa-id="gwa-element-{element_id}"]'
+                )
 
     if element:
         if save_path:
