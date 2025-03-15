@@ -11,7 +11,7 @@ class AgentAction:
 
     def __post_init__(self):
         # self.description = f"{self.name}{f' {self.html_element}' if self.html_element else ''}, args: {self.args}"
-        self.description = f"{self.name}{f' on {self.element["description"]}' if self.element['description'] else ''}, args: {self.args}"
+        self.description = f"{self.name}{f' on {self.element["description"]}' if self.element else ''}, args: {self.args}"
 
 
 @dataclass
