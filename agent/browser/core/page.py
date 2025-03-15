@@ -1,20 +1,12 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 from typing import Any, Tuple
 from urllib.parse import urlparse
 
 from playwright.async_api import Page
 
-from agent.browser.utils.annotation import (
-    clear_bounding_boxes,
-    draw_bounding_boxes,
-    find_interactive_elements,
-)
-from agent.browser.utils.page_state import get_pixels_above_below
-from agent.browser.utils.screenshot import take_screenshot
-from agent.browser.utils.semantic_labels import get_element_descriptions
+from agent.browser.utils.preprocess_page import preprocess_page
 from agent.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -42,11 +34,10 @@ class AgentBrowserPage:
     def __init__(self, page: Page, llm_client: LLMClient, output_dir: str):
         self.page = page
         self.llm_client = llm_client
-        self.element_simplified_htmls = {}
-        self.element_descriptions = {}
-        self.previous_screenshot_base64 = ""
-        self.current_screenshot_base64 = ""
-        self.current_screenshot_annotated_base64 = ""
+        self.elements = {}
+        self.previous_screenshot = ""
+        self.screenshot = ""
+        self.bounding_box_screenshot = ""
 
         self.output_dir = output_dir
 
@@ -84,23 +75,13 @@ class AgentBrowserPage:
         Update the page state with the current screenshot and annotated screenshot.
         """
         await self.wait_for_page_load()
-
-        self.previous_screenshot_base64 = self.current_screenshot_base64
-        self.current_screenshot_base64 = await take_screenshot(
+        self.previous_screenshot = self.screenshot
+        (
+            self.screenshot,
+            self.bounding_box_screenshot,
+            self.elements,
+        ) = await preprocess_page(
             self.page,
-            save_path=f"{self.output_dir}/screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-        )
-
-        self.element_simplified_htmls = await find_interactive_elements(self.page)
-        await draw_bounding_boxes(self.page, list(self.element_simplified_htmls.keys()))
-        self.current_screenshot_annotated_base64 = await take_screenshot(
-            self.page,
-            save_path=f"{self.output_dir}/annotated_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-        )
-        await clear_bounding_boxes(self.page)
-        self.element_descriptions = await get_element_descriptions(
-            self.page,
-            self.element_simplified_htmls,
             self.output_dir,
         )
 
@@ -185,7 +166,7 @@ Respond with a JSON object:
 """
         # Create message with image
         user_message = self.llm_client.create_user_message_with_images(
-            captcha_prompt, [self.current_screenshot_base64]
+            captcha_prompt, [self.screenshot]
         )
 
         response = await self.llm_client.make_call([user_message], "gpt-4o", timeout=10)
@@ -198,9 +179,30 @@ Respond with a JSON object:
 
     async def get_pixels_above_below(self) -> Tuple[int, int]:
         """
-        Get the number of pixels above and below the current viewport.
+            Get the number of pixels above and below the current viewport.
+
+        Args:
+            page: The Playwright page
+
+        Returns:
+            A tuple containing (pixels_above, pixels_below)
         """
-        return await get_pixels_above_below(self.page)
+        pixels_above = await self.page.evaluate(
+            """() => {
+                const scrollingElement = document.scrollingElement || document.body;
+                return scrollingElement.scrollTop;
+            }"""
+        )
+        pixels_below = await self.page.evaluate(
+            """() => {
+                const scrollingElement = document.scrollingElement || document.body;
+                const scrollTop = scrollingElement.scrollTop;
+                const scrollHeight = scrollingElement.scrollHeight;
+                const clientHeight = window.innerHeight;
+                return Math.max(0, scrollHeight - clientHeight - scrollTop);
+            }"""
+        )
+        return pixels_above, pixels_below
 
     async def wait_for_page_load(self) -> None:
         """

@@ -43,7 +43,7 @@ async def take_element_screenshot(
     Returns:
         Base64-encoded string of the screenshot, or None if element not found
     """
-    # First try to find the element directly
+
     selector = f'[data-gwa-id="gwa-element-{element_id}"]'
     element = await page.query_selector(selector)
 

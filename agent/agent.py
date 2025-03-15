@@ -247,14 +247,10 @@ class Agent:
         function_name = tool_call.function.name
         args = json.loads(tool_call.function.arguments)
 
+        current_page = self.browser.pages[self.browser.current_page_index]
         action = AgentAction(
             name=function_name,
-            html_element=self.browser.pages[
-                self.browser.current_page_index
-            ].element_simplified_htmls.get(args.get("element_id", -1), ""),
-            element_description=self.browser.pages[
-                self.browser.current_page_index
-            ].element_descriptions.get(args.get("element_id", -1), ""),
+            element=current_page.elements.get(args.get("element_id", -1), {}),
             args=args,
             id=tool_call.id,
         )

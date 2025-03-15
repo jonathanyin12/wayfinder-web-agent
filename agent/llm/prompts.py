@@ -40,9 +40,6 @@ POSSIBLE ACTIONS:
 
         pixels_above, pixels_below = await page.get_pixels_above_below()
         page_position = get_formatted_page_position(pixels_above, pixels_below)
-        interactable_elements = get_formatted_interactable_elements(
-            pixels_above, pixels_below, page.element_descriptions
-        )
         base_url = page.get_base_url()
         shortened_url = page.get_shortened_url()
         tabs = await get_formatted_tabs(browser)
@@ -60,10 +57,6 @@ CURRENT PAGE STATE:
 - Page Position: {page_position}
 
 Screenshot: current state of the page 
-
-Interactable elements that are currently visible:
-{interactable_elements}
-
 
 TASK:
 1. Provide a brief summary of the current page. Focus on new information.
@@ -87,10 +80,6 @@ CURRENT PAGE STATE:
 Screenshot 1: previous state of the page, before the last action was performed
 
 Screenshot 2: current state of the page, after the last action was performed
-
-Interactable elements that are currently visible (element_id: element_html):
-{interactable_elements}
-
 
 TASK:
 1. Provide a brief summary of the current page (screenshot 2). Focus on new information.
@@ -122,7 +111,7 @@ Respond with a JSON object with the following fields:
         pixels_above, pixels_below = await page.get_pixels_above_below()
         page_position = get_formatted_page_position(pixels_above, pixels_below)
         interactable_elements = get_formatted_interactable_elements(
-            pixels_above, pixels_below, page.element_descriptions
+            pixels_above, pixels_below, page.elements
         )
         base_url = page.get_base_url()
         shortened_url = page.get_shortened_url()
@@ -144,9 +133,7 @@ CURRENT PAGE STATE:
 - URL: {shortened_url}
 - Page Position: {page_position}
 
-Screenshot 1: current state of the page 
-
-Screenshot 2: the current page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
+Screenshot: the current page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
 
 Interactable elements that are currently visible:
 {interactable_elements}
@@ -173,10 +160,14 @@ Important Notes:
         planning_prompt = await self._get_planning_prompt(browser, last_action)
 
         page = browser.pages[browser.current_page_index]
-        images = [
-            page.previous_screenshot_base64,
-            page.current_screenshot_base64,
-        ]
+
+        if page.previous_screenshot:
+            images = [
+                page.previous_screenshot,
+                page.screenshot,
+            ]
+        else:
+            images = [page.screenshot]
 
         user_message = self.llm_client.create_user_message_with_images(
             planning_prompt, images, detail="high"
@@ -192,8 +183,7 @@ Important Notes:
 
         page = browser.pages[browser.current_page_index]
         images = [
-            page.current_screenshot_base64,
-            page.current_screenshot_annotated_base64,
+            page.bounding_box_screenshot,
         ]
 
         user_message = self.llm_client.create_user_message_with_images(
@@ -202,20 +192,21 @@ Important Notes:
         return user_message
 
 
-def get_formatted_interactable_elements(
-    pixels_above, pixels_below, element_descriptions
-) -> str:
+def get_formatted_interactable_elements(pixels_above, pixels_below, elements) -> str:
     """
     Get a formatted string of interactable elements on the page.
 
     Args:
         page: The Playwright page
-        element_descriptions: Dictionary of labeled HTML elements
+        elements: Dictionary of labeled HTML elements
         pixels_above_below: Tuple containing (pixels_above, pixels_below)
 
     Returns:
         A formatted string representation of interactable elements
     """
+    element_descriptions = {
+        element_id: element["description"] for element_id, element in elements.items()
+    }
     has_content_above = pixels_above > 0
     has_content_below = pixels_below > 0
 
