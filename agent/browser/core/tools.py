@@ -58,8 +58,12 @@ TOOLS = [
                         "enum": ["up", "down"],
                         "description": "The direction to scroll ('up' or 'down').",
                     },
+                    "amount": {
+                        "type": "number",
+                        "description": "The fraction of the page height to scroll. 0.75 is a reasonable default. Use 0.4 to scroll a little and > 0.9 to scroll a lot.",
+                    },
                 },
-                "required": ["direction"],
+                "required": ["direction", "amount"],
                 "additionalProperties": False,
             },
             "strict": True,
@@ -88,7 +92,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "navigate",
-            "description": "Navigate browser history forward or back.",
+            "description": "Go back to the previous page or go forward to the next page",
             "parameters": {
                 "type": "object",
                 "properties": {

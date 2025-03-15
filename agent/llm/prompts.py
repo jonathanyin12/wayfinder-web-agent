@@ -24,7 +24,7 @@ POSSIBLE ACTIONS:
 - click_element: click a specific element on the page
 - type_text: type text into a text box on the page and optionally submit the text
 - search_page: tool to search the entire page for specific information. This is the preferred way to find information on a page.
-- scroll: scroll up or down on the page. Use this to find interactable elements (i.e. buttons, links, etc.) that are not currently visible in the current viewport.
+- scroll: scroll up or down on the page. You can use this to learn more about the page and find interactable elements that are not currently visible in the current viewport.
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
 - switch_tab: switch to a different tab
@@ -61,7 +61,7 @@ CURRENT PAGE STATE:
 
 Screenshot: current state of the page 
 
-Interactable elements that are currently visible (element_id: element_html):
+Interactable elements that are currently visible:
 {interactable_elements}
 
 
@@ -148,7 +148,7 @@ Screenshot 1: current state of the page
 
 Screenshot 2: the current page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
 
-Interactable elements that are currently visible (element_id: element_html):
+Interactable elements that are currently visible:
 {interactable_elements}
 
 PROGRESS:
@@ -162,6 +162,7 @@ Select a single action that best completes the next step:
 Important Notes:
 - If the next step requires multiple actions, choose only the first necessary action
 - If you want to click on or type into an element that likely exists on the current page but is not currently visible, try to find it by scrolling
+- If you are unsure about the next step, you can scroll to get a better understanding of the page.
 """
 
     async def build_planning_message(
