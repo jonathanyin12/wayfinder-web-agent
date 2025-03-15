@@ -3,9 +3,12 @@ Annotation actions for labeling and identifying interactive elements on web page
 """
 
 import asyncio
+import base64
+import io
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+from PIL import Image
 from playwright.async_api import Page
 
 from agent.browser.utils.dom_utils.load_js_file import load_js_file
@@ -118,35 +121,33 @@ async def get_element_descriptions(
 
     # Process all elements in parallel
     tasks = []
+
     for element_id, simplified_html in element_simplified_htmls.items():
         await draw_bounding_box_around_element(page, element_id)
         page_screenshot_base64 = await take_screenshot(
             page,
         )
         await clear_bounding_boxes(page)
-        tasks.append(
-            (
-                element_id,
-                get_element_description(
-                    page,
-                    element_id,
-                    simplified_html,
-                    page_screenshot_base64,
-                ),
-            )
+
+        # Create the task
+        task = get_element_description(
+            page,
+            element_id,
+            simplified_html,
+            page_screenshot_base64,
         )
+        tasks.append((element_id, task))
 
     # Execute all tasks concurrently
     results = await asyncio.gather(*[task for _, task in tasks])
 
     # Map results to element IDs
-    elements = {
-        element_id: {
-            "simplified_html": simplified_html,
+    elements = {}
+    for (element_id, _), result in zip(tasks, results):
+        elements[element_id] = {
+            "simplified_html": element_simplified_htmls[element_id],
             "description": result,
         }
-        for (element_id, simplified_html), result in zip(tasks, results)
-    }
 
     return elements
 
@@ -198,5 +199,93 @@ Consider the context of the page when describing the element. For instance, if t
     )
     if not response.content:
         return simplified_html
+
+    return response.content
+
+
+async def get_page_overview(page: Page, output_dir: str) -> str:
+    """
+    Get a brief overview of the page.
+    """
+    # Scroll through the page to ensure lazy-loaded images are loaded
+    await page.evaluate("""
+        async () => {
+            await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 100;
+                const timer = setInterval(() => {
+                    const scrollHeight = document.body.scrollHeight;
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+                    
+                    if(totalHeight >= scrollHeight){
+                        clearInterval(timer);
+                        window.scrollTo(0, 0); // Scroll back to top
+                        resolve();
+                    }
+                }, 10);
+            });
+        }
+    """)
+
+    # Give a moment for final images to load after scrolling
+    await page.wait_for_timeout(1000)
+
+    save_path = f"{output_dir}/full_page_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    full_page_screenshot = await take_screenshot(
+        page, save_path=save_path, full_page=True
+    )
+
+    # Convert base64 screenshot to PIL Image
+    image_data = base64.b64decode(full_page_screenshot)
+    image = Image.open(io.BytesIO(image_data))
+
+    # Get dimensions
+    width, height = image.size
+
+    # Define the crop height
+    crop_height = 1600
+
+    # Calculate number of crops needed
+    num_crops = (height + crop_height - 1) // crop_height  # Ceiling division
+
+    num_crops = min(num_crops, 10)
+    # Create crops
+    crops = []
+    for i in range(num_crops):
+        top = i * crop_height
+        bottom = min(top + crop_height, height)
+
+        # Crop the image
+        crop = image.crop((0, top, width, bottom))
+
+        # Convert back to base64
+        buffered = io.BytesIO()
+        crop.save(buffered, format="PNG")
+        crop_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        crops.append(crop_base64)
+
+    page_title = await page.title()
+
+    prompt = f"""Please provide a concise overview of this webpage.
+
+Page Title: {page_title}
+Page URL: {page.url}
+
+Describe:
+1. The main purpose of the page
+2. Key sections of the page in detail
+3. Any prominent interactive elements (forms, buttons, menus)
+
+Focus on giving a clear, high-level summary that would help a user understand what this page is about and how to navigate it.
+
+The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page.
+"""
+
+    user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
+    response = await llm_client.make_call([user_message], "gpt-4o", json_format=False)
+
+    if not response.content:
+        return "No response from the LLM"
 
     return response.content

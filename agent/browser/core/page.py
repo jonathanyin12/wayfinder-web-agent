@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from playwright.async_api import Page
 
-from agent.browser.utils.preprocess_page import preprocess_page
+from agent.browser.utils.preprocess_page import get_page_overview, preprocess_page
 from agent.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,8 @@ class AgentBrowserPage:
         self.previous_screenshot = ""
         self.screenshot = ""
         self.bounding_box_screenshot = ""
-
+        self.previous_page_url = ""
+        self.page_overview = ""
         self.output_dir = output_dir
 
     def __getattr__(self, name: str) -> Any:
@@ -84,6 +85,10 @@ class AgentBrowserPage:
             self.page,
             self.output_dir,
         )
+        if self.previous_page_url != self.page.url:
+            self.page_overview = await get_page_overview(self.page, self.output_dir)
+            print(self.page_overview)
+            self.previous_page_url = self.page.url
 
     def get_base_url(self) -> str:
         """

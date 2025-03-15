@@ -44,7 +44,7 @@ POSSIBLE ACTIONS:
         shortened_url = page.get_shortened_url()
         tabs = await get_formatted_tabs(browser)
         page_title = await page.page.title()
-
+        page_overview = page.page_overview
         """Returns the prompt template for planning the next action"""
         if not last_action:
             return f"""OPEN BROWSER TABS:
@@ -56,7 +56,10 @@ CURRENT PAGE STATE:
 - URL: {shortened_url}
 - Page Position: {page_position}
 
-Screenshot: current state of the page 
+Full page overview:
+{page_overview}
+
+Screenshot: current visible portion of the page 
 
 TASK:
 1. Provide a brief summary of the current page. Focus on new information.
@@ -77,9 +80,12 @@ CURRENT PAGE STATE:
 - URL: {shortened_url}
 - Page Position: {page_position}
 
-Screenshot 1: previous state of the page, before the last action was performed
+Full page overview:
+{page_overview}
 
-Screenshot 2: current state of the page, after the last action was performed
+Screenshot 1: previous visible portion of the page, before the last action was performed
+
+Screenshot 2: current visible portion of the page, after the last action was performed
 
 TASK:
 1. Provide a brief summary of the current page (screenshot 2). Focus on new information.
@@ -122,7 +128,7 @@ Respond with a JSON object with the following fields:
         progress = planning_response.get(
             "progress", "You have not yet started the task."
         )
-
+        page_overview = page.page_overview
         return f"""OPEN BROWSER TABS:
 {tabs}
 
@@ -133,7 +139,10 @@ CURRENT PAGE STATE:
 - URL: {shortened_url}
 - Page Position: {page_position}
 
-Screenshot: the current page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
+Full page overview:
+{page_overview}
+
+Screenshot: the current visible portion of the page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
 
 Interactable elements that are currently visible:
 {interactable_elements}
