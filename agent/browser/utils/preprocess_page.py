@@ -210,6 +210,7 @@ async def get_page_overview(page: Page, output_dir: str) -> str:
     # Scroll through the page to ensure lazy-loaded images are loaded
     await page.evaluate("""
         async () => {
+            const originalScrollPosition = window.scrollY;
             await new Promise((resolve) => {
                 let totalHeight = 0;
                 const distance = 100;
@@ -220,7 +221,7 @@ async def get_page_overview(page: Page, output_dir: str) -> str:
                     
                     if(totalHeight >= scrollHeight){
                         clearInterval(timer);
-                        window.scrollTo(0, 0); // Scroll back to top
+                        window.scrollTo(0, originalScrollPosition); // Scroll back to original position
                         resolve();
                     }
                 }, 10);
@@ -267,17 +268,14 @@ async def get_page_overview(page: Page, output_dir: str) -> str:
 
     page_title = await page.title()
 
-    prompt = f"""Please provide a concise overview of this webpage.
+    prompt = f"""Tasks:
+1. Describe the main purpose of the page
+
+2. Provide a detailed overview of the key sections of the page. For each section, include a title, a brief description of the section, and important interactive elements (e.g. buttons, links, form fields, etc.). Order the sections from top to bottom as a numbered list.
+
 
 Page Title: {page_title}
 Page URL: {page.url}
-
-Describe:
-1. The main purpose of the page
-2. Key sections of the page in detail
-3. Any prominent interactive elements (forms, buttons, menus)
-
-Focus on giving a clear, high-level summary that would help a user understand what this page is about and how to navigate it.
 
 The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page.
 """
