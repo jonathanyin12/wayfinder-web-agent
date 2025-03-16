@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 
-from agent.agents.task_executor.task_executor import TaskExecutor
+from agent.agents.orchestrator import Orchestrator
 from agent.browser.core.browser import AgentBrowser
 from agent.llm import LLMClient
 
@@ -31,10 +31,10 @@ class WebAgent:
     async def run(self):
         await self.browser.launch()
 
-        task_executor = TaskExecutor(
+        orchestrator = Orchestrator(
             self.objective, self.llm_client, self.browser, self.output_dir
         )
-        result = await task_executor.run()
+        result = await orchestrator.run()
         print(result)
 
         await self.browser.terminate()
