@@ -49,7 +49,7 @@ class TaskExecutor:
         self.model = "o1"
         self.message_history: List[ChatCompletionMessageParam] = []
 
-        self.include_captcha_check = True
+        self.include_captcha_check = False
 
     async def run(self):
         print(f"Starting task: {self.task}")
@@ -63,6 +63,9 @@ class TaskExecutor:
             # Get the next action
             action = await self._choose_next_action()
 
+            if action.name == "finish_task":
+                break
+
             # Execute the action
             success = await self._execute_action(action)
             if not success:
@@ -70,16 +73,15 @@ class TaskExecutor:
 
             self.llm_client.print_token_usage()
 
-            if action.name == "finish_task":
-                break
             iteration += 1
+
+        self.llm_client.print_token_usage()
 
         if iteration >= self.max_iterations:
             print("Max iterations reached. Task not completed.")
             return "Failed to complete task within max iterations."
         else:
             print(f"Completed task in {iteration} iterations.")
-            print(f"Final response: {action.args.get('final_response', '')}")
             return f"Completed task: {self.task}\n\n{action.args.get('final_response', '')}"
 
     def _get_system_prompt(self) -> str:
@@ -88,7 +90,7 @@ class TaskExecutor:
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
 - type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
-- scroll (direction: up | down): scroll up or down on the page. Refer to the full page overview to determine whether scrolling could help you find what you are looking for.
+- scroll (direction: up | down, amount: float): scroll up or down on the page. The amount is the percentage of the viewport height to scroll.
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
