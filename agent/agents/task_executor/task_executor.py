@@ -55,8 +55,6 @@ class TaskExecutor:
         print(f"Starting task: {self.task}")
         iteration = 0
         while iteration < self.max_iterations:
-            iteration += 1
-
             # Check for captcha first before planning the next action
             if self.include_captcha_check and await self.browser.check_for_captcha():
                 await self._wait_for_human_input()
@@ -72,13 +70,20 @@ class TaskExecutor:
 
             self.llm_client.print_token_usage()
 
-            if action.name == "end":
+            if action.name == "finish_task":
                 break
+            iteration += 1
 
-        print(f"Completed task in {iteration} iterations.")
+        if iteration >= self.max_iterations:
+            print("Max iterations reached. Task not completed.")
+            return "Failed to complete task within max iterations."
+        else:
+            print(f"Completed task in {iteration} iterations.")
+            print(f"Final response: {action.args.get('final_response', '')}")
+            return f"Completed task: {self.task}\n\n{action.args.get('final_response', '')}"
 
     def _get_system_prompt(self) -> str:
-        return f"""You are a helpful web browsing assistant. Your job is to complete the following task: {self.task}
+        return f"""You are a helpful web browsing assistant. Your job is to complete the following task: "{self.task}"
 
 Here are the possible actions you can take:
 - click_element: click a specific element on the page
@@ -87,7 +92,7 @@ Here are the possible actions you can take:
 - navigate: go back to the previous page or go forward to the next page
 - go_to_url: go to a specific url
 - switch_tab: switch to a different tab
-- end: declare that you have completed the task
+- finish_task: declare that you have completed the task and no further actions are needed
 
 
 PAGE OVERVIEW:
@@ -200,12 +205,14 @@ TASK:
 - Don't repeat actions that have already been performed unless the action failed.
 
 2. Choose a single action to perform next. Provide all the relevant information needed to perform the action.
-- If the action involves clicking on an element, provide the element ID.
-- If the action involves typing text into a text box, provide the element ID and the text to type.
-- If the action involves scrolling, provide the direction to scroll.
+- If you are clicking on an element, provide the element ID.
+- If you are typing text into a text box, provide the element ID and the text to type.
+- If you are scrolling, provide the direction to scroll.
+- If you are finishing the task, provide the final response to the task and a reason for why you believe you have completed the task.
 
 Finally, respond with a JSON object with the following fields:
 {{
+    "progress_summary": <summary of what you have done so far>,
     "action_description": <one sentence description of the action you will perform>,
     "action_name": <name of the action to take>,
     "args": <list of arguments for the action, if any>,

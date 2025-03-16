@@ -34,6 +34,7 @@ class WebAgent:
         task_executor = TaskExecutor(
             self.objective, self.llm_client, self.browser, self.output_dir
         )
-        await task_executor.run()
+        result = await task_executor.run()
+        print(result)
 
         await self.browser.terminate()

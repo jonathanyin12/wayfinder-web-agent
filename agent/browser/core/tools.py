@@ -168,14 +168,14 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "end",
+            "name": "finish_task",
             "description": "Declare that you have completed the task.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "reason": {
                         "type": "string",
-                        "description": "The reason for ending the task.",
+                        "description": "The reason why you believe you have completed the task.",
                     },
                     "final_response": {
                         "type": "string",
