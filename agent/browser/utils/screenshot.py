@@ -23,6 +23,30 @@ async def take_screenshot(
     Returns:
         Base64-encoded string of the screenshot
     """
+    if full_page:
+        # Scroll through the page to ensure lazy-loaded images are loaded
+        await page.evaluate("""
+            async () => {
+                const originalScrollPosition = window.scrollY;
+                await new Promise((resolve) => {
+                    let totalHeight = 0;
+                    const distance = 100;
+                    const timer = setInterval(() => {
+                        const scrollHeight = document.body.scrollHeight;
+                        window.scrollBy(0, distance);
+                        totalHeight += distance;
+                        
+                        if(totalHeight >= scrollHeight){
+                            clearInterval(timer);
+                            window.scrollTo(0, originalScrollPosition); // Scroll back to original position
+                            resolve();
+                        }
+                    }, 10);
+                });
+            }
+        """)
+        await page.wait_for_timeout(1000)
+
     if save_path:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
     screenshot = await page.screenshot(full_page=full_page, path=save_path)
@@ -31,7 +55,7 @@ async def take_screenshot(
 
 async def take_element_screenshot(
     page: Page, element_id: str, save_path: Optional[str] = None
-) -> Optional[str]:
+) -> str:
     """
     Take a screenshot of a specific element on the page.
 
@@ -47,9 +71,10 @@ async def take_element_screenshot(
     selector = f'[data-gwa-id="gwa-element-{element_id}"]'
     element = await page.query_selector(selector)
 
-    if element:
-        if save_path:
-            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-        screenshot = await element.screenshot(path=save_path)
-        return base64.b64encode(screenshot).decode("utf-8")
-    return None
+    if not element:
+        raise ValueError(f"Element with ID {element_id} not found")
+
+    if save_path:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+    screenshot = await element.screenshot(path=save_path)
+    return base64.b64encode(screenshot).decode("utf-8")

@@ -1,3 +1,3 @@
-from .agent import Agent
+from .web_agent import WebAgent
 
-__all__ = ["Agent"]
+__all__ = ["WebAgent"]
