@@ -35,10 +35,10 @@
     newElement.className = "GWA-rect";
     newElement.style.border = "2px solid brown";
     newElement.style.position = "absolute";
-    newElement.style.top = `${adjustedTop}px`;
-    newElement.style.left = `${adjustedLeft}px`;
-    newElement.style.width = `${rect.width}px`;
-    newElement.style.height = `${rect.height}px`;
+    newElement.style.top = `${adjustedTop - 3}px`;
+    newElement.style.left = `${adjustedLeft - 3}px`;
+    newElement.style.width = `${rect.width + 6}px`;
+    newElement.style.height = `${rect.height + 6}px`;
     newElement.style.zIndex = "10000";
     newElement.style.pointerEvents = "none";
     document.body.appendChild(newElement);

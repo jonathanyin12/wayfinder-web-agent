@@ -33,7 +33,12 @@ class AgentBrowser:
     and provides a simplified interface for agent interactions.
     """
 
-    def __init__(self, output_dir):
+    def __init__(
+        self,
+        initial_url: str,
+        output_dir: str,
+        headless: bool,
+    ):
         """Initialize the browser controller."""
         # Playwright resources
         self.playwright: Optional[Playwright] = None
@@ -46,13 +51,13 @@ class AgentBrowser:
         self.llm_client = LLMClient()
 
         self.output_dir = output_dir
+        self.initial_url = initial_url
+        self.headless = headless
 
     # Browser lifecycle methods
     # ------------------------------------------------------------------------
 
-    async def launch(
-        self, url: str = "https://google.com", headless: bool = False
-    ) -> None:
+    async def launch(self) -> None:
         """
         Launch the browser and navigate to the initial URL.
 
@@ -65,7 +70,7 @@ class AgentBrowser:
         """
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.launch(
-            headless=headless,
+            headless=self.headless,
             args=[
                 "--window-position=0,0",
             ],
@@ -78,7 +83,7 @@ class AgentBrowser:
             viewport={"width": 1200, "height": 1600},
         )
 
-        await self.create_new_page(url)
+        await self.create_new_page(self.initial_url)
 
         self.context.on("page", self.handle_new_page_event)
 
@@ -113,7 +118,7 @@ class AgentBrowser:
     # Action execution
     # ------------------------------------------------------------------------
 
-    async def execute_action(self, action: AgentAction) -> str:
+    async def execute_action(self, action: AgentAction) -> Optional[str]:
         """
         Execute an agent action on the browser.
 
@@ -123,29 +128,23 @@ class AgentBrowser:
         Returns:
             A string representation of the action result
         """
-        if not self.pages:
-            raise RuntimeError("Browser has no pages initialized")
 
-        if action.name == "end":
-            result = action.args["final_response"]
+        action_response = None
+        if action.name == "finish_task":
+            pass
         elif action.name == "switch_tab":
-            result = await self.switch_tab(action.args["tab_index"])
+            await self.switch_tab(action.args["tab_index"])
         else:
-            current_page = self.pages[self.current_page_index]
-
-            result = await getattr(current_page, action.name)(**action.args)
-
-        if result:
-            formatted_result = f"Performed {action.description}.\n\nResult:\n{result}"
-        else:
-            formatted_result = f"Performed {action.description}. Outcome unknown."
+            action_response = await getattr(self.current_page, action.name)(
+                **action.args
+            )
 
         # Update the browser state after the action completes
-        current_page = self.pages[self.current_page_index]
+        await self.current_page.update_page_state(
+            force_update_page_overview=action.name == "click_element"
+        )
 
-        await current_page.update_page_state()
-
-        return formatted_result
+        return action_response
 
     # Page state management (private methods)
     # ------------------------------------------------------------------------
@@ -174,5 +173,19 @@ class AgentBrowser:
 
     async def update_page_state(self):
         """Update the page state for all pages."""
-        current_page = self.pages[self.current_page_index]
-        await current_page.update_page_state()
+        await self.current_page.update_page_state(force_update_page_overview=True)
+
+    @property
+    def current_page(self) -> AgentBrowserPage:
+        """
+        Get the current active browser page.
+
+        Returns:
+            The current AgentBrowserPage instance
+
+        Raises:
+            IndexError: If there are no open pages
+        """
+        if not self.pages:
+            raise IndexError("No browser pages are open")
+        return self.pages[self.current_page_index]

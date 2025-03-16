@@ -1,12 +1,14 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any, Tuple
 from urllib.parse import urlparse
 
 from playwright.async_api import Page
 
 from agent.browser.utils.preprocess_page import get_page_overview, preprocess_page
+from agent.browser.utils.screenshot import take_screenshot
 from agent.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,8 @@ class AgentBrowserPage:
         self.page_overview = ""
         self.output_dir = output_dir
 
+        self.is_new_page = False  # Whether the current page's url is different from the previous page's url
+
     def __getattr__(self, name: str) -> Any:
         """
         Dynamic method resolution for browser actions.
@@ -71,24 +75,47 @@ class AgentBrowserPage:
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
 
-    async def update_page_state(self) -> None:
+    async def update_page_state(self, force_update_page_overview: bool = False) -> None:
         """
         Update the page state with the current screenshot and annotated screenshot.
         """
         await self.wait_for_page_load()
+
         self.previous_screenshot = self.screenshot
-        (
-            self.screenshot,
-            self.bounding_box_screenshot,
-            self.elements,
-        ) = await preprocess_page(
-            self.page,
-            self.output_dir,
+
+        tasks = []
+        if self.previous_page_url != self.page.url or force_update_page_overview:
+            self.is_new_page = True
+            save_path = f"{self.output_dir}/full_page_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            full_page_screenshot = await take_screenshot(
+                self.page, save_path=save_path, full_page=True
+            )
+            tasks.append(
+                asyncio.create_task(get_page_overview(self.page, full_page_screenshot))
+            )
+        tasks.append(
+            asyncio.create_task(
+                preprocess_page(
+                    self.page,
+                    self.output_dir,
+                )
+            )
         )
-        if self.previous_page_url != self.page.url:
-            self.page_overview = await get_page_overview(self.page, self.output_dir)
-            print(self.page_overview)
+
+        results = await asyncio.gather(*tasks)
+
+        # Unpack the results from the tasks
+        if len(results) > 1:
+            page_overview, (screenshot, bounding_box_screenshot, elements) = results
+            self.page_overview = page_overview
+            # print(self.page_overview)
             self.previous_page_url = self.page.url
+        else:
+            screenshot, bounding_box_screenshot, elements = results[0]
+
+        self.screenshot = screenshot
+        self.bounding_box_screenshot = bounding_box_screenshot
+        self.elements = elements
 
     def get_base_url(self) -> str:
         """

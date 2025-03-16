@@ -203,39 +203,10 @@ Consider the context of the page when describing the element. For instance, if t
     return response.content
 
 
-async def get_page_overview(page: Page, output_dir: str) -> str:
+async def get_page_overview(page: Page, full_page_screenshot: str) -> str:
     """
     Get a brief overview of the page.
     """
-    # Scroll through the page to ensure lazy-loaded images are loaded
-    await page.evaluate("""
-        async () => {
-            const originalScrollPosition = window.scrollY;
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 100;
-                const timer = setInterval(() => {
-                    const scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-                    
-                    if(totalHeight >= scrollHeight){
-                        clearInterval(timer);
-                        window.scrollTo(0, originalScrollPosition); // Scroll back to original position
-                        resolve();
-                    }
-                }, 10);
-            });
-        }
-    """)
-
-    # Give a moment for final images to load after scrolling
-    await page.wait_for_timeout(1000)
-
-    save_path = f"{output_dir}/full_page_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    full_page_screenshot = await take_screenshot(
-        page, save_path=save_path, full_page=True
-    )
 
     # Convert base64 screenshot to PIL Image
     image_data = base64.b64decode(full_page_screenshot)

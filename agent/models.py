@@ -1,17 +1,19 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCall,
+)
+
 
 @dataclass
 class AgentAction:
     name: str
     element: dict[str, Any] = field(default_factory=dict)
     args: dict[str, Any] = field(default_factory=dict)
-    id: str = ""
-
-    def __post_init__(self):
-        # self.description = f"{self.name}{f' {self.html_element}' if self.html_element else ''}, args: {self.args}"
-        self.description = f"{self.name}{f' on {self.element["description"]}' if self.element else ''}, args: {self.args}"
+    description: str = ""
+    reasoning: str = ""
+    tool_call: ChatCompletionMessageToolCall | None = None
 
 
 @dataclass
