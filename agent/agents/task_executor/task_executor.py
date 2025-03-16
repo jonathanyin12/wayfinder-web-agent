@@ -86,13 +86,13 @@ class TaskExecutor:
         return f"""You are a helpful web browsing assistant. Your job is to complete the following task: "{self.task}"
 
 Here are the possible actions you can take:
-- click_element: click a specific element on the page
-- type_text: type text into a text box on the page and optionally submit the text
-- scroll: scroll up or down on the page. Refer to the full page overview to determine whether scrolling could help you find what you are looking for.
-- navigate: go back to the previous page or go forward to the next page
-- go_to_url: go to a specific url
-- switch_tab: switch to a different tab
-- finish_task: declare that you have completed the task and no further actions are needed
+- click_element (element_id: int): click on an element on the page
+- type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
+- scroll (direction: up | down): scroll up or down on the page. Refer to the full page overview to determine whether scrolling could help you find what you are looking for.
+- navigate (direction: back | forward): go back to the previous page or go forward to the next page
+- go_to_url (url: str): go to a specific url
+- switch_tab (tab_index: int): switch to a different tab
+- finish_task (reason: str, final_response: str): declare that you have completed the task and no further actions are needed
 
 
 PAGE OVERVIEW:
@@ -212,11 +212,11 @@ TASK:
 
 Finally, respond with a JSON object with the following fields:
 {{
-    "progress_summary": <summary of what you have done so far>,
+    "action_history": <summary of what you have done so far>,
+    "reasoning": <reasoning for choosing this action>
     "action_description": <one sentence description of the action you will perform>,
     "action_name": <name of the action to take>,
-    "args": <list of arguments for the action, if any>,
-    "reasoning": <reasoning for choosing this action>
+    "kwargs": <kwargs for the action, if any>,
 }}"""
 
     async def _execute_action(self, action: AgentAction) -> bool:
