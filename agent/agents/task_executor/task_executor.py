@@ -1,6 +1,28 @@
-import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
+from openai.types.chat.chat_completion_assistant_message_param import (
+    ChatCompletionAssistantMessageParam,
+)
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCall,
+)
+from openai.types.chat.chat_completion_message_tool_call_param import (
+    ChatCompletionMessageToolCallParam,
+)
+from openai.types.chat.chat_completion_message_tool_call_param import (
+    Function as ToolCallParamFunction,
+)
+from openai.types.chat.chat_completion_system_message_param import (
+    ChatCompletionSystemMessageParam,
+)
+from openai.types.chat.chat_completion_tool_message_param import (
+    ChatCompletionToolMessageParam,
+)
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
 
 from agent.agents.utils.prompt_formatting import (
     get_formatted_interactable_elements,
@@ -23,9 +45,11 @@ class TaskExecutor:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = 5
+        self.max_iterations = 10
         self.model = "o1"
-        self.message_history: List[Dict[str, Any]] = []
+        self.message_history: List[ChatCompletionMessageParam] = []
+
+        self.include_captcha_check = True
 
     async def run(self):
         print(f"Starting task: {self.task}")
@@ -33,27 +57,19 @@ class TaskExecutor:
         while iteration < self.max_iterations:
             iteration += 1
 
-            # Run captcha check and planning concurrently
-            captcha_task = asyncio.create_task(self.browser.check_for_captcha())
-            action_task = asyncio.create_task(self._choose_next_action())
-
-            captcha_detected = await captcha_task
-            if captcha_detected:
-                # Cancel action task if still running
-                if not action_task.done():
-                    action_task.cancel()
-                    try:
-                        await action_task  # Allow cancellation to process
-                    except asyncio.CancelledError:
-                        pass  # Ignore the cancellation error
+            # Check for captcha first before planning the next action
+            if self.include_captcha_check and await self.browser.check_for_captcha():
                 await self._wait_for_human_input()
                 continue
 
-            action = await action_task
+            # Get the next action
+            action = await self._choose_next_action()
 
-            await self._execute_action(action)
+            # Execute the action
+            success = await self._execute_action(action)
+            if not success:
+                print("Action execution failed. Trying again next iteration...")
 
-            # self.llm_client.print_message_history(self.message_history)
             self.llm_client.print_token_usage()
 
             if action.name == "end":
@@ -81,18 +97,46 @@ PAGE OVERVIEW:
     async def _choose_next_action(self) -> AgentAction:
         """Choose the next action to take
 
-        Note: having o1 directly choose the right function call is very expensive for some reason. It is cheaper to have o1 select the action and then have another model make the actual function call. An added benefit of this is that we get some visibility into the action selection process.
+        Note: the benefit of not using o1 to choose the tool is that we get to output other metadata in the response, such as the action description and reasoning.
         """
-
+        # Get the action prompt and prepare the user message with image
         action_prompt = await self._get_action_prompt()
-
         images = [self.browser.current_page.bounding_box_screenshot]
         user_message = self.llm_client.create_user_message_with_images(
             action_prompt, images, detail="high"
         )
+
+        # Get action choice from primary model
+        response_json = await self._get_action_choice(user_message)
+        print(f"Action choice:\n{json.dumps(response_json, indent=2)}")
+
+        # Convert to a tool call
+        tool_call = await self._convert_action_choice_to_tool_call(response_json)
+        args = json.loads(tool_call.function.arguments)
+
+        action = AgentAction(
+            name=tool_call.function.name,
+            element=self.browser.current_page.elements.get(
+                args.get("element_id", -1), {}
+            ),
+            description=response_json["action_description"],
+            reasoning=response_json["reasoning"],
+            args=args,
+            tool_call=tool_call,
+        )
+
+        return action
+
+    async def _get_action_choice(
+        self, user_message: ChatCompletionMessageParam
+    ) -> Dict[str, Any]:
+        """Get action recommendation from the primary LLM"""
+        system_message = ChatCompletionSystemMessageParam(
+            role="system", content=self._get_system_prompt()
+        )
         response = await self.llm_client.make_call(
             [
-                {"role": "system", "content": self._get_system_prompt()},
+                system_message,
                 *self.message_history,
                 user_message,
             ],
@@ -103,15 +147,18 @@ PAGE OVERVIEW:
             raise ValueError("No response content received from LLM")
 
         response_json = json.loads(response.content)
-        print(f"Action choice:\n{json.dumps(response_json, indent=2)}")
+        return response_json
 
+    async def _convert_action_choice_to_tool_call(
+        self, action_choice: Dict[str, Any]
+    ) -> ChatCompletionMessageToolCall:
+        """Create a tool call from an action choice"""
+        user_message = ChatCompletionUserMessageParam(
+            role="user",
+            content=f"Perform the following action:\n{json.dumps(action_choice, indent=2)}",
+        )
         tool_call_message = await self.llm_client.make_call(
-            [
-                {
-                    "role": "user",
-                    "content": f"Perform the following action:\n{json.dumps(response_json, indent=2)}",
-                }
-            ],
+            [user_message],
             "gpt-4o-mini",
             tools=TOOLS,
         )
@@ -119,23 +166,7 @@ PAGE OVERVIEW:
             raise ValueError("No tool calls received from LLM")
 
         tool_call = tool_call_message.tool_calls[0]
-        function_name = tool_call.function.name
-        args = json.loads(tool_call.function.arguments)
-
-        action = AgentAction(
-            name=function_name,
-            element=self.browser.current_page.elements.get(
-                args.get("element_id", -1), {}
-            ),
-            description=response_json["action_description"],
-            reasoning=response_json["reasoning"],
-            args=args,
-            id=tool_call.id,
-        )
-        # Append tool call message to history
-        self.message_history.append(tool_call_message.model_dump())
-
-        return action
+        return tool_call
 
     async def _get_action_prompt(
         self,
@@ -181,36 +212,53 @@ Finally, respond with a JSON object with the following fields:
     "reasoning": <reasoning for choosing this action>
 }}"""
 
-    async def _execute_action(self, action: AgentAction) -> Optional[str]:
+    async def _execute_action(self, action: AgentAction) -> bool:
+        """Execute an action and return whether it was successful"""
         try:
+            assert action.tool_call is not None
             result = await self.browser.execute_action(action)
 
-            action_content = f"Performed the following action: '{action.description}'"
-            if result:
-                action_content += f"\nResult: {result}"
-
-            # Append tool message to history
+            # Add tool call to history
+            tool_call = action.tool_call
             self.message_history.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": action.id,
-                    "content": action_content,
-                }
+                ChatCompletionAssistantMessageParam(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        ChatCompletionMessageToolCallParam(
+                            function=ToolCallParamFunction(
+                                name=tool_call.function.name,
+                                arguments=tool_call.function.arguments,
+                            ),
+                            id=tool_call.id,
+                            type=tool_call.type,
+                        )
+                    ],
+                )
             )
-            return result
+            # Append tool output to history
+            tool_output = f"Performed the following action: '{action.description}'"
+            if result:
+                tool_output += f"\nResult: {result}"
+
+            self.message_history.append(
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=action.tool_call.id,
+                    content=tool_output,
+                )
+            )
+            return True
         except Exception as e:
             print(f"Error executing action: {e}")
-            print("Trying again next iteration...")
-            # Remove last two messages from history on failure
-            if len(self.message_history) >= 2:
-                self.message_history = self.message_history[:-2]
+            # Update page state after error
             await self.browser.update_page_state()
-            return None
+            return False
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
         """Wait for human to press Enter to yield control back to agent"""
-        self.required_human_input = True
+        print("Captcha detected. Human intervention required.")
         while True:
             try:
                 user_input = input(
