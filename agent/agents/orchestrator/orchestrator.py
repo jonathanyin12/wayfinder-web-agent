@@ -100,7 +100,7 @@ Screenshot: shows the current visible portion of the page
 TASK:
 1. Make a rough plan to complete the objective from the current state.
 - Consider the things that have already been done and what still needs to be done.
-- Evaluate whether the current plan is still valid or if it should be updated. Make sure to remove any steps that have already been completed.
+- Update the previous plan if it is no longer valid (e.g. need to backtrack). Make sure to remove any steps that have already been completed.
 - It's okay to be unsure or less detailed about later steps.
 - You can evaluate whether previous steps were successful or not, but don't include that in the plan unless a mistake was made and it needs to be corrected.
 
