@@ -39,8 +39,9 @@
     newElement.style.left = `${adjustedLeft - 3}px`;
     newElement.style.width = `${rect.width + 6}px`;
     newElement.style.height = `${rect.height + 6}px`;
-    newElement.style.zIndex = "10000";
+    newElement.style.zIndex = "2147483647";
     newElement.style.pointerEvents = "none";
+    newElement.style.backgroundColor = "rgba(165, 42, 42, 0.1)";
     document.body.appendChild(newElement);
 
     // Create label with index number
@@ -54,9 +55,9 @@
     label.style.left = `${adjustedLeft}px`;
     label.style.color = "white";
     label.style.fontWeight = "bold";
-    label.style.fontSize = "16px";
+    label.style.fontSize = "14px";
     label.style.backgroundColor = "brown";
-    label.style.zIndex = "10000";
+    label.style.zIndex = "2147483647";
     document.body.appendChild(label);
   });
 
