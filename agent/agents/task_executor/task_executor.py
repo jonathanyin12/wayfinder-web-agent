@@ -78,7 +78,7 @@ class TaskExecutor:
         self.llm_client.print_token_usage()
 
         if iteration >= self.max_iterations:
-            return False, "max_iterations"
+            return False, "Failed to complete task"
 
         return True, action.args.get("final_response")
 
@@ -130,10 +130,10 @@ PAGE OVERVIEW:
             tool_call=tool_call,
         )
 
-        user_message = self.llm_client.create_user_message_with_images(
-            "", images, detail="high"
-        )
-        self.message_history.append(user_message)
+        # user_message = self.llm_client.create_user_message_with_images(
+        #     "", images, detail="high"
+        # )
+        # self.message_history.append(user_message)
 
         return action
 

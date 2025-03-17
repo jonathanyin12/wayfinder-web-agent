@@ -1,13 +1,12 @@
 import os
 from datetime import datetime
 
-from agent.agents.orchestrator import Orchestrator
+from agent.agents.orchestrator.orchestrator import Orchestrator
 from agent.browser.core.browser import AgentBrowser
 from agent.llm import LLMClient
 
 
 class WebAgent:
-    # Configuration and Initialization
     def __init__(
         self,
         objective: str,
@@ -22,19 +21,12 @@ class WebAgent:
         )
         os.makedirs(self.output_dir, exist_ok=True)
         self.browser = AgentBrowser(initial_url, self.output_dir, headless)
-
-        # Components
         self.llm_client = LLMClient()
-
-        self.max_iterations = 10
 
     async def run(self):
         await self.browser.launch()
-
         orchestrator = Orchestrator(
             self.objective, self.llm_client, self.browser, self.output_dir
         )
-        result = await orchestrator.run()
-        print(result)
-
+        await orchestrator.run()
         await self.browser.terminate()
