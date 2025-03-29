@@ -1,4 +1,5 @@
 import json
+import time
 from typing import List
 
 from openai.types.chat.chat_completion_assistant_message_param import (
@@ -46,6 +47,7 @@ class Orchestrator:
         self.plan = "No plan yet"
 
     async def run(self):
+        start_time = time.time()
         iteration = 0
         while iteration < self.max_iterations:
             next_task = await self._decide_next_task()
@@ -69,8 +71,7 @@ class Orchestrator:
                 )
             )
             print(result)
-
-        return
+        return result, iteration, time.time() - start_time
 
     async def _decide_next_task(self):
         """Make a plan for the next task"""
@@ -108,10 +109,12 @@ Previous plan:
 {self.plan}
 
 
-2. Then, output what should be done on this page according to the plan.
+2. Then, output what should be done next according to the plan.
 - Study the screenshot and page overview to understand the current state of the page.
 - This should only focus on the current page and not future pages.
-- Be detailed and specific about what to do. Avoid ambiguity. The scope should also be clear. Don't say something vaguelike "explore the results".
+- Avoid ambiguity. Don't say something vague like "explore the results". The scope should also be clear. 
+- Focus more on outcomes rather than prescribing specific actions.
+- Provide all the context needed to complete the next step within the instructions.
 
 
 If the objective is complete and there are no more steps to take, just say "objective complete" for the next step.
