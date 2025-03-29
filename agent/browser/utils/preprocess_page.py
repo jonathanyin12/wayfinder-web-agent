@@ -37,9 +37,16 @@ async def preprocess_page(
         save_path=f"{output_dir}/bounding_box_screenshots/{timestamp}.png",
     )
     await clear_bounding_boxes(page)
-    elements = await get_element_descriptions(
-        page, element_simplified_htmls, output_dir
-    )
+    # elements = await get_element_descriptions(
+    #     page, element_simplified_htmls, output_dir
+    # )
+    elements = {
+        element_id: {
+            "simplified_html": element_simplified_htmls[element_id],
+            "description": element_simplified_htmls[element_id],
+        }
+        for element_id in element_simplified_htmls
+    }
 
     return screenshot_base64, bounding_box_screenshot_base64, elements
 

@@ -217,8 +217,8 @@ TASK:
 
 Finally, respond with a JSON object with the following fields:
 {{
-    "action_history": <summary of what you have done so far>,
-    "reasoning": <reasoning for choosing this action>
+    "progress": <summary of what you have done so far and what you still need to do>,
+    "reasoning": <reasoning for choosing this action>,
     "action_description": <one sentence description of the action you will perform>,
     "action_name": <name of the action to take>,
     "kwargs": <kwargs for the action, if any>,
