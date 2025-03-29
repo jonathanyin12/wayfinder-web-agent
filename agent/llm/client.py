@@ -168,7 +168,9 @@ class LLMClient:
 
         return ChatCompletionUserMessageParam(role="user", content=content)
 
-    def format_message_history(self, message_history: List[Dict[str, Any]]) -> str:
+    def format_message_history(
+        self, message_history: List[Dict[str, Any] | ChatCompletionMessageParam]
+    ) -> str:
         """Format the message history into a readable string for debugging
 
         Args:
@@ -185,31 +187,33 @@ class LLMClient:
                 message = message.model_dump()
 
             # Add a clear header for each message
-            role = message["role"].upper()
+            role = message.get("role", "UNKNOWN").upper()
             formatted_output.append(f"=== {role} MESSAGE ===")
 
             # Process message content
-            if message.get("content"):
-                if isinstance(message["content"], list):
+            content = message.get("content")
+            if content is not None:
+                if isinstance(content, list):
                     # Handle multi-part content (text and images)
-                    for content_item in message["content"]:
-                        if content_item["type"] == "text":
+                    for content_item in content:
+                        if content_item.get("type") == "text":
                             # Format text content with indentation
-                            text_lines = content_item["text"].split("\n")
+                            text_lines = content_item.get("text", "").split("\n")
                             for line in text_lines:
                                 formatted_output.append(f"  {line}")
-                        elif content_item["type"] == "image_url":
+                        elif content_item.get("type") == "image_url":
                             formatted_output.append("  [IMAGE ATTACHMENT]")
                 else:
                     # Handle simple string content
-                    text_lines = message["content"].split("\n")
+                    text_lines = str(content).split("\n")
                     for line in text_lines:
                         formatted_output.append(f"  {line}")
 
             # Handle tool calls
-            elif message.get("tool_calls"):
+            tool_calls = message.get("tool_calls")
+            if tool_calls:
                 formatted_output.append("  [TOOL CALLS]")
-                for i, tool_call in enumerate(message["tool_calls"], 1):
+                for i, tool_call in enumerate(tool_calls, 1):
                     formatted_output.append(f"  Tool Call #{i}:")
                     formatted_output.append(f"    {tool_call}")
 
@@ -220,7 +224,9 @@ class LLMClient:
 
         return "\n".join(formatted_output)
 
-    def print_message_history(self, message_history: List[Dict[str, Any]]) -> None:
+    def print_message_history(
+        self, message_history: List[Union[Dict[str, Any], ChatCompletionMessageParam]]
+    ) -> None:
         """Print the message history for debugging"""
         formatted_history = self.format_message_history(message_history)
         print(formatted_history)

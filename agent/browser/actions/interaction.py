@@ -29,6 +29,7 @@ async def click_element(page: Page, element_id: str):
     """
     try:
         selector = f'[data-gwa-id="gwa-element-{element_id}"]'
+        await page.hover(selector)
         await page.click(selector, timeout=10000)
 
     except Exception as e:

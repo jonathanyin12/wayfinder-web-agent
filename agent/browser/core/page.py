@@ -80,12 +80,12 @@ class AgentBrowserPage:
         Update the page state with the current screenshot and annotated screenshot.
         """
         await self.wait_for_page_load()
+        self.is_new_page = self.previous_page_url != self.page.url
 
         self.previous_screenshot = self.screenshot
 
         tasks = []
         if self.previous_page_url != self.page.url or force_update_page_overview:
-            self.is_new_page = True
             save_path = f"{self.output_dir}/full_page_screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             full_page_screenshot = await take_screenshot(
                 self.page, save_path=save_path, full_page=True
@@ -93,6 +93,7 @@ class AgentBrowserPage:
             tasks.append(
                 asyncio.create_task(get_page_overview(self.page, full_page_screenshot))
             )
+
         tasks.append(
             asyncio.create_task(
                 preprocess_page(
@@ -109,13 +110,13 @@ class AgentBrowserPage:
             page_overview, (screenshot, bounding_box_screenshot, elements) = results
             self.page_overview = page_overview
             # print(self.page_overview)
-            self.previous_page_url = self.page.url
         else:
             screenshot, bounding_box_screenshot, elements = results[0]
 
         self.screenshot = screenshot
         self.bounding_box_screenshot = bounding_box_screenshot
         self.elements = elements
+        self.previous_page_url = self.page.url
 
     def get_base_url(self) -> str:
         """

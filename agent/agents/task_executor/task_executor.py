@@ -78,11 +78,9 @@ class TaskExecutor:
         self.llm_client.print_token_usage()
 
         if iteration >= self.max_iterations:
-            print("Max iterations reached. Task not completed.")
-            return "Failed to complete task within max iterations."
-        else:
-            print(f"Completed task in {iteration} iterations.")
-            return f"Completed task: {self.task}\n\n{action.args.get('final_response', '')}"
+            return False, "Failed to complete task"
+
+        return True, action.args.get("final_response")
 
     def _get_system_prompt(self) -> str:
         return f"""You are a helpful web browsing assistant. Your job is to complete the following task: "{self.task}"
@@ -90,7 +88,7 @@ class TaskExecutor:
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
 - type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
-- scroll (direction: up | down, amount: float): scroll up or down on the page. The amount is the percentage of the viewport height to scroll.
+- scroll (direction: up | down, amount: float): scroll up or down on the page. The amount is the percentage of the viewport height to scroll (default is 0.75).
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
@@ -131,6 +129,11 @@ PAGE OVERVIEW:
             args=args,
             tool_call=tool_call,
         )
+
+        # user_message = self.llm_client.create_user_message_with_images(
+        #     "", images, detail="high"
+        # )
+        # self.message_history.append(user_message)
 
         return action
 
@@ -202,7 +205,7 @@ CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
 
 TASK:
 1. Reason about what action to take next based on the current page, the task you have been given, and the actions you have already taken.
-- Consider the elements you can currently see and interact with on the page.
+- Consider the elements you can currently see and interact with on the page as well as the previous images.
 - Are you looking for a specific element on the page that is not currently visible? According to the page overview, is it located in a section of the page that you have not yet scrolled to?
 - Don't repeat actions that have already been performed unless the action failed.
 
@@ -214,8 +217,8 @@ TASK:
 
 Finally, respond with a JSON object with the following fields:
 {{
-    "action_history": <summary of what you have done so far>,
-    "reasoning": <reasoning for choosing this action>
+    "progress": <summary of what you have done so far and what you still need to do>,
+    "reasoning": <reasoning for choosing this action>,
     "action_description": <one sentence description of the action you will perform>,
     "action_name": <name of the action to take>,
     "kwargs": <kwargs for the action, if any>,
