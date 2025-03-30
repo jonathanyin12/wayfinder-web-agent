@@ -119,21 +119,21 @@ async def find_iframe_interactive_elements(
                     // Create overlay with absolute positioning relative to the main document
                     const overlay = document.createElement("div");
                     overlay.className = "GWA-rect";
-                    overlay.style.position = "absolute";
+                    overlay.style.position = "fixed";
                     overlay.style.left = x + "px";
                     overlay.style.top = y + "px";
                     overlay.style.width = width + "px";
                     overlay.style.height = height + "px";
                     overlay.style.border = "2px solid brown";
                     overlay.style.backgroundColor = "rgba(165, 42, 42, 0.1)";
-                    overlay.style.zIndex = "2147483647"; // Maximum z-index to ensure visibility
-                    overlay.style.pointerEvents = "none"; // Make sure it doesn't block interactions
+                    overlay.style.zIndex = "2147483647";
+                    overlay.style.pointerEvents = "none";
 
                     // Add a label with the element ID
                     const label = document.createElement("span");
                     label.className = "GWA-label";
                     label.textContent = elementId;
-                    label.style.position = "absolute";
+                    label.style.position = "fixed";
                     label.style.top = y + "px";
                     label.style.left = x + "px";
                     label.style.backgroundColor = "brown";
@@ -142,7 +142,6 @@ async def find_iframe_interactive_elements(
                     label.style.fontSize = "14px";
                     label.style.padding = "1px";
                     label.style.zIndex = "2147483647";
-                                    
                     
                     // Append the overlay and label to the main document body
                     document.body.appendChild(overlay);
