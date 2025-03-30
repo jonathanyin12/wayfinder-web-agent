@@ -32,6 +32,13 @@ async def preprocess_page(
     )
     element_simplified_htmls = await find_interactive_elements(page)
     await draw_bounding_boxes(page, list(element_simplified_htmls.keys()))
+    starting_index = len(element_simplified_htmls)
+    # Find iframe elements and their interactive elements
+    iframe_elements = await find_iframe_interactive_elements(page, starting_index)
+
+    # Merge iframe elements with main page elements
+    element_simplified_htmls.update(iframe_elements)
+
     bounding_box_screenshot_base64 = await take_screenshot(
         page,
         save_path=f"{output_dir}/bounding_box_screenshots/{timestamp}.png",
@@ -49,6 +56,106 @@ async def preprocess_page(
     }
 
     return screenshot_base64, bounding_box_screenshot_base64, elements
+
+
+async def find_iframe_interactive_elements(
+    page: Page, starting_index: int
+) -> Dict[int, str]:
+    """
+    Find and identify interactive elements within iframes on the page.
+    """
+    iframe_locator = page.locator("iframe")
+    iframe_elements = await iframe_locator.element_handles()
+    iframes_element_simplified_htmls = {}
+    for element in iframe_elements:
+        # Check if the iframe is visible before processing its contents
+        try:
+            is_visible = await element.is_visible()
+            if not is_visible:
+                continue
+        except Exception as e:
+            print(f"Error checking iframe visibility: {e}")
+            continue
+
+        # Get the Frame object from the iframe element handle
+        frame = await element.content_frame()
+        if not frame:
+            continue
+
+        interactive_locator = frame.locator("a, button, input, select, textarea")
+        count = await interactive_locator.count()
+
+        for i in range(count):
+            elem = interactive_locator.nth(i)
+            if not await elem.is_visible():
+                continue
+
+            text = await elem.text_content() or await elem.get_attribute("value") or ""
+            # Get the HTML of the element
+            tag_name = await elem.evaluate("el => el.tagName.toLowerCase()")
+            html = await elem.evaluate("el => el.outerHTML")
+
+            # For input elements, we might want to get additional attributes
+            if tag_name == "input":
+                input_type = await elem.get_attribute("type") or ""
+                value = await elem.get_attribute("value") or ""
+                placeholder = await elem.get_attribute("placeholder") or ""
+                html = f"<{tag_name} type='{input_type}' value='{value}' placeholder='{placeholder}'>{text}</{tag_name}>"
+
+            # Add a unique identifier to track this iframe element
+            # Using a high number range (1000000+) to avoid conflicts with main page elements
+            iframe_element_id = starting_index + i
+            await elem.evaluate(
+                f"el => el.setAttribute('data-gwa-id', 'gwa-element-{iframe_element_id}')"
+            )
+            iframes_element_simplified_htmls[iframe_element_id] = html
+
+            box = await elem.bounding_box()
+            if not box:
+                continue
+            # Draw an overlay around the iframe element
+            await page.evaluate(
+                """([x, y, width, height, elementId]) => {
+                    // Create overlay with absolute positioning relative to the main document
+                    const overlay = document.createElement("div");
+                    overlay.className = "GWA-rect";
+                    overlay.style.position = "fixed";
+                    overlay.style.left = x + "px";
+                    overlay.style.top = y + "px";
+                    overlay.style.width = width + "px";
+                    overlay.style.height = height + "px";
+                    overlay.style.border = "2px solid brown";
+                    overlay.style.backgroundColor = "rgba(165, 42, 42, 0.1)";
+                    overlay.style.zIndex = "2147483647";
+                    overlay.style.pointerEvents = "none";
+
+                    // Add a label with the element ID
+                    const label = document.createElement("span");
+                    label.className = "GWA-label";
+                    label.textContent = elementId;
+                    label.style.position = "fixed";
+                    label.style.top = y + "px";
+                    label.style.left = x + "px";
+                    label.style.backgroundColor = "brown";
+                    label.style.color = "white";
+                    label.style.fontWeight = "bold";
+                    label.style.fontSize = "14px";
+                    label.style.padding = "1px";
+                    label.style.zIndex = "2147483647";
+                    
+                    // Append the overlay and label to the main document body
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(label);
+                }""",
+                [
+                    box["x"],
+                    box["y"],
+                    box["width"],
+                    box["height"],
+                    iframe_element_id,
+                ],
+            )
+    return iframes_element_simplified_htmls
 
 
 async def find_interactive_elements(page: Page) -> Dict[int, str]:

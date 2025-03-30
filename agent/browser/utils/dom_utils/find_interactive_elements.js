@@ -5,7 +5,9 @@
   });
 
   const elements = Array.from(
-    document.querySelectorAll("a, button, input, textarea, select")
+    document.querySelectorAll(
+      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='listbox'], [role='menuitem'], [role='tab'], [role='link']"
+    )
   );
   let element_simplified_htmls = {}; // HTML for each element index
 
