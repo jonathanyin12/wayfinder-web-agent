@@ -14,30 +14,49 @@ async def take_screenshot_full_page(page: Page, save_path: Optional[str] = None)
     Take a screenshot of the full page by temporarily extending the viewport.
     This avoids issues with fixed elements appearing multiple times.
     """
-    # Store original viewport size
-    original_viewport = await page.evaluate("""() => { 
-        return {
-            width: window.innerWidth,
-            height: window.innerHeight
-        }
-    }""")
-
     # Get page dimensions
-    page_width = await page.evaluate("document.body.scrollWidth")
     page_height = await page.evaluate("document.body.scrollHeight")
 
     # Save original scroll position
     original_position = await page.evaluate("window.scrollY")
 
-    try:
-        # Set viewport to full page size (with reasonable limits)
-        max_dimension = 16384  # Most browsers have limits around this size
-        if page_height > max_dimension:
-            # Fall back to scrolling method if page is too large
-            return await take_screenshot_full_page(page, save_path)
+    # Scroll through the page to ensure all lazy-loaded content is loaded
+    await page.evaluate("""
+        async () => {
+            // Save original scroll position
+            const originalPosition = window.scrollY;
+            
+            // Scroll through the entire page
+            await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 100;
+                const timer = setInterval(() => {
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+                    
+                    if(totalHeight >= document.body.scrollHeight){
+                        clearInterval(timer);
+                        resolve();
+                    }
+                }, 10);
+            });
+            
+            // Restore original scroll position
+            window.scrollTo(0, originalPosition);
+        }
+    """)
 
+    # Short delay to ensure everything is settled
+    await page.wait_for_timeout(500)
+
+    try:
         # Resize viewport to fit the entire page
-        await page.set_viewport_size({"width": page_width, "height": page_height})
+        # Set a maximum height for the viewport to avoid issues with extremely long pages
+        # Most browsers have limits on viewport dimensions
+        max_viewport_height = 16384  # Common browser limit is around 16384 pixels
+        viewport_height = min(page_height, max_viewport_height)
+
+        await page.set_viewport_size({"width": 1200, "height": viewport_height})
 
         # Take the screenshot in one go
         screenshot = await page.screenshot(full_page=False)
@@ -51,9 +70,7 @@ async def take_screenshot_full_page(page: Page, save_path: Optional[str] = None)
 
     finally:
         # Always restore original viewport size and scroll position
-        await page.set_viewport_size(
-            {"width": original_viewport["width"], "height": original_viewport["height"]}
-        )
+        await page.set_viewport_size({"width": 1200, "height": 1600})
         await page.evaluate(f"window.scrollTo(0, {original_position})")
 
 
