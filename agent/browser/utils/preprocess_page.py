@@ -67,6 +67,8 @@ async def find_iframe_interactive_elements(
     iframe_locator = page.locator("iframe")
     iframe_elements = await iframe_locator.element_handles()
     iframes_element_simplified_htmls = {}
+    element_count = 0  # Track elements across all iframes
+
     for element in iframe_elements:
         # Check if the iframe is visible before processing its contents
         try:
@@ -103,8 +105,10 @@ async def find_iframe_interactive_elements(
                 html = f"<{tag_name} type='{input_type}' value='{value}' placeholder='{placeholder}'>{text}</{tag_name}>"
 
             # Add a unique identifier to track this iframe element
-            # Using a high number range (1000000+) to avoid conflicts with main page elements
-            iframe_element_id = starting_index + i
+            # Using starting_index + a unique counter for all iframe elements
+            iframe_element_id = starting_index + element_count
+            element_count += 1
+
             await elem.evaluate(
                 f"el => el.setAttribute('data-gwa-id', 'gwa-element-{iframe_element_id}')"
             )
