@@ -116,14 +116,25 @@ async def take_element_screenshot(
     Returns:
         Base64-encoded string of the screenshot, or None if element not found
     """
-
     selector = f'[data-gwa-id="gwa-element-{element_id}"]'
+
+    # First try to find the element in the main frame
     element = await page.query_selector(selector)
 
-    if not element:
-        raise ValueError(f"Element with ID {element_id} not found")
+    if element:
+        if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        screenshot = await element.screenshot(path=save_path)
+        return base64.b64encode(screenshot).decode("utf-8")
 
-    if save_path:
-        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-    screenshot = await element.screenshot(path=save_path)
-    return base64.b64encode(screenshot).decode("utf-8")
+    # If not found in main frame, look for it in all frames
+    for frame in page.frames:
+        element = await frame.query_selector(selector)
+        if element:
+            if save_path:
+                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+            screenshot = await element.screenshot(path=save_path)
+            return base64.b64encode(screenshot).decode("utf-8")
+
+    # If we get here, element wasn't found in any frame
+    raise ValueError(f"Element with ID {element_id} not found in any frame")
