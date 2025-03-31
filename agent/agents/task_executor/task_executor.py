@@ -42,7 +42,7 @@ class TaskExecutor:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = 10
+        self.max_iterations = 5
         self.model = "gpt-4o"
         self.message_history: List[ChatCompletionMessageParam] = []
 
@@ -78,14 +78,13 @@ class TaskExecutor:
         return True, action.args.get("final_response")
 
     def _get_system_prompt(self) -> str:
-        return f"""You are a web browsing assistant helping to complete one part of the following objective: "{self.objective}"
-
-Your specific task is the following: "{self.task}"
+        return f"""You are a web browsing assistant helping to complete the following task: "{self.task}"
 
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
 - type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
 - scroll (content_to_find: str): scroll to find content on the page. Provide as much context/detail as possible about what you are looking for.
+- extract (information_to_extract: str): Extracts specific textual information from the current page based on a descriptive query of what you are looking for e.g. "the headline of the news article", "the first paragraph of the blog post" etc. Use this when you need particular pieces of information rather than interacting with elements.
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
