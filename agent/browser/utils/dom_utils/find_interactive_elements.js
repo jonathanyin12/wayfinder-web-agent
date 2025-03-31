@@ -233,33 +233,13 @@
       // Determine the element to which we'll add the data-gwa-id attribute
       let targetElement = element;
 
-      // For input elements, especially checkboxes and radio buttons,
-      // use the parent element that contains the label
-      if (tagName === "input") {
-        const inputElement = element;
-        // @ts-ignore: Property 'type' may not exist on type 'Element'
-        if (inputElement.type === "radio" || inputElement.type === "checkbox") {
-          targetElement = getParentWithLabel(element);
-        }
-      } else if (
+      // For these elements, use the parent element that contains the label
+      if (
         tagName === "input" ||
         tagName === "textarea" ||
         tagName === "select"
       ) {
-        // For other form elements, check if there's a direct label to use
-        if (element.id) {
-          const associatedLabel = document.querySelector(
-            `label[for="${element.id}"]`
-          );
-          if (associatedLabel) {
-            targetElement = associatedLabel;
-          }
-        } else if (
-          element.parentElement &&
-          element.parentElement.tagName.toLowerCase() === "label"
-        ) {
-          targetElement = element.parentElement;
-        }
+        targetElement = getParentWithLabel(element);
       }
 
       // Set a data attribute to uniquely identify the element using the visible index
