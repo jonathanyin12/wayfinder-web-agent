@@ -8,17 +8,8 @@ from openai.types.chat.chat_completion_message_param import ChatCompletionMessag
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
 )
-from openai.types.chat.chat_completion_message_tool_call_param import (
-    ChatCompletionMessageToolCallParam,
-)
-from openai.types.chat.chat_completion_message_tool_call_param import (
-    Function as ToolCallParamFunction,
-)
 from openai.types.chat.chat_completion_system_message_param import (
     ChatCompletionSystemMessageParam,
-)
-from openai.types.chat.chat_completion_tool_message_param import (
-    ChatCompletionToolMessageParam,
 )
 from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
@@ -38,15 +29,21 @@ from ...llm import LLMClient
 
 class TaskExecutor:
     def __init__(
-        self, task: str, llm_client: LLMClient, browser: AgentBrowser, output_dir: str
+        self,
+        objective: str,
+        task: str,
+        llm_client: LLMClient,
+        browser: AgentBrowser,
+        output_dir: str,
     ):
+        self.objective = objective
         self.task = task
         self.llm_client = llm_client
         self.browser = browser
         self.output_dir = output_dir
 
         self.max_iterations = 10
-        self.model = "o1"
+        self.model = "gpt-4o"
         self.message_history: List[ChatCompletionMessageParam] = []
 
         self.include_captcha_check = False
@@ -67,8 +64,7 @@ class TaskExecutor:
                 break
 
             # Execute the action
-            action_result = await self._execute_action(action)
-            await self._provide_action_feedback(action, action_result)
+            await self._execute_action(action)
 
             self.llm_client.print_token_usage()
 
@@ -82,7 +78,9 @@ class TaskExecutor:
         return True, action.args.get("final_response")
 
     def _get_system_prompt(self) -> str:
-        return f"""You are a helpful web browsing assistant. Your job is to complete the following task: "{self.task}"
+        return f"""You are a web browsing assistant helping to complete one part of the following objective: "{self.objective}"
+
+Your specific task is the following: "{self.task}"
 
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
@@ -94,7 +92,7 @@ Here are the possible actions you can take:
 - end_task (final_response: str): declare that you have completed the task and provide a final response
 
 
-PAGE OVERVIEW:
+Here is an overview of the current page:
 {self.browser.current_page.page_overview}
 """
 
@@ -105,7 +103,10 @@ PAGE OVERVIEW:
         """
         # Get the action prompt and prepare the user message with image
         action_prompt = await self._get_action_prompt()
-        images = [self.browser.current_page.bounding_box_screenshot]
+        images = [
+            self.browser.current_page.screenshot,
+            self.browser.current_page.bounding_box_screenshot,
+        ]
         user_message = self.llm_client.create_user_message_with_images(
             action_prompt, images, detail="high"
         )
@@ -152,10 +153,17 @@ PAGE OVERVIEW:
             self.model,
             json_format=True,
         )
+
         if not response.content:
             raise ValueError("No response content received from LLM")
 
         response_json = json.loads(response.content)
+        self.message_history.append(
+            ChatCompletionAssistantMessageParam(
+                role="assistant",
+                content=response.content,
+            )
+        )
         return response_json
 
     async def _convert_action_choice_to_tool_call(
@@ -189,30 +197,17 @@ PAGE OVERVIEW:
             pixels_above, pixels_below, page.elements
         )
         tabs = await get_formatted_tabs(self.browser)
-        return f"""OPEN BROWSER TABS:
-{tabs}
+        return f"""TASK:
+1. Reason about whether you have completed the task.
+- Consider the actions you have already taken and the progress you have made.
+- Don't interpret the task too narrowly.
 
-SCREENSHOT: 
-the current visible portion of the page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
+2. Reason about what action to take next.
+- Consider the elements you can currently see and interact with on the page.
+- Use the scroll action if you need to find something that is not currently visible.
+- Don't repeatedly try actions that aren't working. Find an alternative strategy.
+- If the task is complete, respond with the action "end_task".
 
-PAGE POSITION:
-{page_position}
-
-CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
-{interactable_elements}
-
-
-TASK:
-1. Reason about what action to take next based on the current page, the task you have been given, and the actions you have already taken.
-- Consider the elements you can currently see and interact with on the page as well as the previous images.
-- Are you looking for a specific element on the page that is not currently visible? According to the page overview, is it located in a section of the page that you have not yet scrolled to?
-- Don't repeat actions that have already been performed unless the action failed.
-
-2. Choose a single action to perform next. Provide all the relevant information needed to perform the action.
-- If you are clicking on an element, provide the element ID.
-- If you are typing text into a text box, provide the element ID and the text to type.
-- If you are scrolling, provide the direction to scroll.
-- If you are finishing the task, provide the final response to the task and a reason for why you believe you have completed the task.
 
 Finally, respond with a JSON object with the following fields:
 {{
@@ -220,55 +215,35 @@ Finally, respond with a JSON object with the following fields:
     "reasoning": <reasoning for choosing this action>,
     "action_description": <one sentence description of the action you will perform>,
     "action_name": <name of the action to take>,
-    "kwargs": <kwargs for the action, if any>,
-}}"""
+    "kwargs": <kwargs for the action>,
+}}
 
-    async def _execute_action(self, action: AgentAction) -> str | None:
-        """Execute an action and return the result"""
+
+OPEN BROWSER TABS:
+{tabs}
+
+SCREENSHOTS: 
+First screenshot: the current visible portion of the page.
+Second screenshot: the current visible portion of the page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
+
+PAGE POSITION:
+{page_position}
+
+CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
+{interactable_elements}
+"""
+
+    async def _execute_action(self, action: AgentAction):
+        """Execute an action, get feedback if necessary, and update message history."""
+        action_result_str = None
         try:
             assert action.tool_call is not None
-            result = await self.browser.execute_action(action)
+            # Execute the action
+            action_result_str = await self.browser.execute_action(action)
 
-            # Add tool call to history
-            tool_call = action.tool_call
-            self.message_history.append(
-                ChatCompletionAssistantMessageParam(
-                    role="assistant",
-                    content=None,
-                    tool_calls=[
-                        ChatCompletionMessageToolCallParam(
-                            function=ToolCallParamFunction(
-                                name=tool_call.function.name,
-                                arguments=tool_call.function.arguments,
-                            ),
-                            id=tool_call.id,
-                            type=tool_call.type,
-                        )
-                    ],
-                )
-            )
-            return result
-        except Exception as e:
-            print(f"Error executing action: {e}")
-            # Update page state after error
-            await self.browser.update_page_state()
-
-    async def _provide_action_feedback(
-        self, action: AgentAction, action_result: str | None = None
-    ):
-        assert action.tool_call is not None
-
-        if action_result:
-            self.message_history.append(
-                ChatCompletionToolMessageParam(
-                    role="tool",
-                    tool_call_id=action.tool_call.id,
-                    content=action_result,
-                )
-            )
-        else:
-            """Provide feedback on the most recent action"""
-            message = f"""Based on the two screenshots, evaluate whether the following action was completed successfully. 
+            # If the browser tool didn't provide an explicit result string, get feedback from the LLM
+            if action_result_str is None:
+                message = f"""Based on the two screenshots, evaluate whether the following action was completed successfully.
 
 Action: {action.description}
 
@@ -276,39 +251,55 @@ The first screenshot is the state of the page before the action, and the second 
 - If no visible change occured, consider why e.g. perhaps the action was selecting on option that was already selected.
 
 Output your verdict as a JSON object with the following fields:
-{{  
+{{
     "reasoning": <reasoning about whether the action was completed successfully>,
     "evaluation": <statement about the action's outcome, making sure to restate the action>,
 }}"""
 
-            user_message = self.llm_client.create_user_message_with_images(
-                message,
-                [
-                    self.browser.current_page.previous_screenshot,
-                    self.browser.current_page.screenshot,
-                ],
-                detail="high",
-            )
-
-            response = await self.llm_client.make_call(
-                [user_message],
-                "gpt-4o",
-            )
-
-            if not response.content:
-                raise ValueError("No response content received from LLM")
-
-            response_json = json.loads(response.content)
-
-            output = response_json["evaluation"]
-            print(f"Action feedback: {json.dumps(response_json, indent=2)}")
-            self.message_history.append(
-                ChatCompletionToolMessageParam(
-                    role="tool",
-                    tool_call_id=action.tool_call.id,
-                    content=output,
+                user_message = self.llm_client.create_user_message_with_images(
+                    message,
+                    [
+                        self.browser.current_page.previous_screenshot,
+                        self.browser.current_page.screenshot,
+                    ],
+                    detail="high",
                 )
+
+                response = await self.llm_client.make_call(
+                    [user_message],
+                    "gpt-4o",
+                    json_format=True,  # Ensure JSON format for easier parsing
+                )
+
+                if not response.content:
+                    print("Warning: No feedback content received from LLM")
+                    action_result_str = f"Action '{action.description}' executed, but evaluation query failed."
+                else:
+                    try:
+                        response_json = json.loads(response.content)
+                        action_result_str = response_json["evaluation"]
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(
+                            f"Error parsing feedback response: {e}. Raw response: {response.content}"
+                        )
+                        action_result_str = f"Action '{action.description}' executed, but evaluation response parsing failed."
+
+            # Append the final result/feedback to history
+            self.message_history.append(
+                ChatCompletionUserMessageParam(role="user", content=action_result_str)
             )
+            print(f"Action result: {action_result_str}")
+
+        except Exception as e:
+            print(f"Error executing action '{action.description}': {e}")
+            # Update page state after error
+            await self.browser.update_page_state()
+            # Add error message to history
+            error_message = f"Error executing action '{action.description}': {e}"
+            self.message_history.append(
+                ChatCompletionUserMessageParam(role="user", content=error_message)
+            )
+            print(f"Action failed: {error_message}")
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
