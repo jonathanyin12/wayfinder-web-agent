@@ -45,25 +45,44 @@ TOOLS = [
             "strict": True,
         },
     },
+    # {
+    #     "type": "function",
+    #     "function": {
+    #         "name": "scroll",
+    #         "description": "Scroll the page up or down.",
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": {
+    #                 "direction": {
+    #                     "type": "string",
+    #                     "enum": ["up", "down"],
+    #                     "description": "The direction to scroll ('up' or 'down').",
+    #                 },
+    #                 "amount": {
+    #                     "type": "number",
+    #                     "description": "The fraction of the page height to scroll. 0.75 is a reasonable default. Use 0.4 to scroll a little and > 0.9 to scroll a lot.",
+    #                 },
+    #             },
+    #             "required": ["direction", "amount"],
+    #             "additionalProperties": False,
+    #         },
+    #         "strict": True,
+    #     },
+    # },
     {
         "type": "function",
         "function": {
-            "name": "scroll",
-            "description": "Scroll the page up or down.",
+            "name": "find",
+            "description": "Find content on the page.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "direction": {
+                    "content_to_find": {
                         "type": "string",
-                        "enum": ["up", "down"],
-                        "description": "The direction to scroll ('up' or 'down').",
-                    },
-                    "amount": {
-                        "type": "number",
-                        "description": "The fraction of the page height to scroll. 0.75 is a reasonable default. Use 0.4 to scroll a little and > 0.9 to scroll a lot.",
-                    },
+                        "description": "The content to find on the page. Provide as much context as possible.",
+                    }
                 },
-                "required": ["direction", "amount"],
+                "required": ["content_to_find"],
                 "additionalProperties": False,
             },
             "strict": True,
