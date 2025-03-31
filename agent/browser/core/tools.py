@@ -69,25 +69,6 @@ TOOLS = [
             "strict": True,
         },
     },
-    # {
-    #     "type": "function",
-    #     "function": {
-    #         "name": "search_page",
-    #         "description": "Search the entire page for information relevant to the query.",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {
-    #                 "query": {
-    #                     "type": "string",
-    #                     "description": "The information to search for. This should be as detailed and specific as possible.",
-    #                 }
-    #             },
-    #             "required": ["query"],
-    #             "additionalProperties": False,
-    #         },
-    #         "strict": True,
-    #     },
-    # },
     {
         "type": "function",
         "function": {
@@ -146,43 +127,20 @@ TOOLS = [
             "strict": True,
         },
     },
-    # {
-    #     "type": "function",
-    #     "function": {
-    #         "name": "ask_user",
-    #         "description": "Ask the user a question.",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {
-    #                 "question": {
-    #                     "type": "string",
-    #                     "description": "The question to ask the user. Be very detailed on why you need help and what your question is.",
-    #                 }
-    #             },
-    #             "required": ["question"],
-    #             "additionalProperties": False,
-    #         },
-    #         "strict": True,
-    #     },
-    # },
     {
         "type": "function",
         "function": {
-            "name": "finish_task",
+            "name": "end_task",
             "description": "Declare that you have completed the task.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "reason": {
-                        "type": "string",
-                        "description": "The reason why you believe you have completed the task.",
-                    },
                     "final_response": {
                         "type": "string",
                         "description": "The final response/answer to the task. Include detailed information if the task involved gathering specific information (e.g. a recipe, a product description, summary of a page, etc.).",
                     },
                 },
-                "required": ["reason", "final_response"],
+                "required": ["final_response"],
                 "additionalProperties": False,
             },
             "strict": True,

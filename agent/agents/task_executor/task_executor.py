@@ -63,13 +63,12 @@ class TaskExecutor:
             # Get the next action
             action = await self._choose_next_action()
 
-            if action.name == "finish_task":
+            if action.name == "end_task":
                 break
 
             # Execute the action
-            success = await self._execute_action(action)
-            if not success:
-                print("Action execution failed. Trying again next iteration...")
+            action_result = await self._execute_action(action)
+            await self._provide_action_feedback(action, action_result)
 
             self.llm_client.print_token_usage()
 
@@ -92,7 +91,7 @@ Here are the possible actions you can take:
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
-- finish_task (reason: str, final_response: str): declare that you have completed the task and no further actions are needed
+- end_task (final_response: str): declare that you have completed the task and provide a final response
 
 
 PAGE OVERVIEW:
@@ -224,8 +223,8 @@ Finally, respond with a JSON object with the following fields:
     "kwargs": <kwargs for the action, if any>,
 }}"""
 
-    async def _execute_action(self, action: AgentAction) -> bool:
-        """Execute an action and return whether it was successful"""
+    async def _execute_action(self, action: AgentAction) -> str | None:
+        """Execute an action and return the result"""
         try:
             assert action.tool_call is not None
             result = await self.browser.execute_action(action)
@@ -248,24 +247,68 @@ Finally, respond with a JSON object with the following fields:
                     ],
                 )
             )
-            # Append tool output to history
-            tool_output = f"Performed the following action: '{action.description}'"
-            if result:
-                tool_output += f"\nResult: {result}"
-
-            self.message_history.append(
-                ChatCompletionToolMessageParam(
-                    role="tool",
-                    tool_call_id=action.tool_call.id,
-                    content=tool_output,
-                )
-            )
-            return True
+            return result
         except Exception as e:
             print(f"Error executing action: {e}")
             # Update page state after error
             await self.browser.update_page_state()
-            return False
+
+    async def _provide_action_feedback(
+        self, action: AgentAction, action_result: str | None = None
+    ):
+        assert action.tool_call is not None
+
+        if action_result:
+            self.message_history.append(
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=action.tool_call.id,
+                    content=action_result,
+                )
+            )
+        else:
+            """Provide feedback on the most recent action"""
+            message = f"""Based on the two screenshots, evaluate whether the following action was completed successfully. 
+
+Action: {action.description}
+
+The first screenshot is the state of the page before the action, and the second screenshot is the state of the page after the action. Consider what UX changes are expected for the action.
+- If no visible change occured, consider why e.g. perhaps the action was selecting on option that was already selected.
+
+Output your verdict as a JSON object with the following fields:
+{{  
+    "reasoning": <reasoning about whether the action was completed successfully>,
+    "evaluation": <statement about the action's outcome, making sure to restate the action>,
+}}"""
+
+            user_message = self.llm_client.create_user_message_with_images(
+                message,
+                [
+                    self.browser.current_page.previous_screenshot,
+                    self.browser.current_page.screenshot,
+                ],
+                detail="high",
+            )
+
+            response = await self.llm_client.make_call(
+                [user_message],
+                "gpt-4o",
+            )
+
+            if not response.content:
+                raise ValueError("No response content received from LLM")
+
+            response_json = json.loads(response.content)
+
+            output = response_json["evaluation"]
+            print(f"Action feedback: {json.dumps(response_json, indent=2)}")
+            self.message_history.append(
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=action.tool_call.id,
+                    content=output,
+                )
+            )
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
