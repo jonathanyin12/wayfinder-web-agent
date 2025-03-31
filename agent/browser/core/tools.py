@@ -72,8 +72,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "find",
-            "description": "Find content on the page.",
+            "name": "scroll",
+            "description": "Scroll to find content on the page.",
             "parameters": {
                 "type": "object",
                 "properties": {

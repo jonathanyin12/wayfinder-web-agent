@@ -87,7 +87,7 @@ class TaskExecutor:
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
 - type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
-- find (content_to_find: str): find content on the page. If you are looking for something on the current page that is not visible, use this action. Provide as much context/detail as possible about what you are looking for.
+- scroll (content_to_find: str): scroll to find content on the page. Provide as much context/detail as possible about what you are looking for.
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
