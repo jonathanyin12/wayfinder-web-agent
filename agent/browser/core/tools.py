@@ -91,6 +91,25 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "extract",
+            "description": "Finds and extracts specific textual information from the current page based on a descriptive query. Use this tool when you need particular pieces of information (e.g., a price, a name, a summary paragraph) rather than interacting with elements.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "information_to_extract": {
+                        "type": "string",
+                        "description": "A detailed natural language description of the specific text you want to find and extract. For example: 'the headline of the news article', 'the total price in the shopping cart', 'the first paragraph of the blog post'.",
+                    }
+                },
+                "required": ["information_to_extract"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "navigate",
             "description": "Go back to the previous page or go forward to the next page",
             "parameters": {
