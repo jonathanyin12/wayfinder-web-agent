@@ -61,7 +61,11 @@ class Orchestrator:
                 )
             )
             task_executor = TaskExecutor(
-                next_task, self.llm_client, self.browser, self.output_dir
+                self.objective,
+                next_task,
+                self.llm_client,
+                self.browser,
+                self.output_dir,
             )
             success, result = await task_executor.run()
             self.message_history.append(
@@ -85,20 +89,7 @@ class Orchestrator:
             pixels_above,
             pixels_below,
         )
-        user_prompt = f"""CURRENT STATE:
-
-Browser tabs:
-{tabs}
- 
-Page overview:
-{page_overview}
-
-Page position: {page_position}
-
-Screenshot: shows the current visible portion of the page
-
-
-TASK:
+        user_prompt = f"""TASK:
 1. Make a rough plan to complete the objective from the current state.
 - Consider the things that have already been done and what still needs to be done.
 - Update the previous plan if it is no longer valid (e.g. need to backtrack). Make sure to remove any steps that have already been completed.
@@ -109,12 +100,12 @@ Previous plan:
 {self.plan}
 
 
-2. Then, output what should be done next according to the plan.
+2. Then, output what should be done next according to the plan (typically the first step). This information will be passed to the task executor.
 - Study the screenshot and page overview to understand the current state of the page.
 - This should only focus on the current page and not future pages.
-- Avoid ambiguity. Don't say something vague like "explore the results". The scope should also be clear. 
+- Avoid ambiguity. Don't say something vague like "explore/review the results". The scope should also be clear. 
 - Focus more on outcomes rather than prescribing specific actions.
-- Provide all the context needed to complete the next step within the instructions.
+- Provide all the context needed to complete the next step within the instructions. The task executor won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
 
 
 If the objective is complete and there are no more steps to take, just say "objective complete" for the next step.
@@ -124,8 +115,22 @@ Output your plan in JSON format.
 {{
     "progress": <brief summary of what has been done so far>
     "plan": <description of the overall plan, in markdown format>
-    "next_step": <what should be done on this page>
-}}"""
+    "next_step": <what should be done next>
+}}
+
+
+CURRENT STATE:
+
+Browser tabs:
+{tabs}
+ 
+Page overview:
+{page_overview}
+
+Page position: {page_position}
+
+Screenshots: shows the current visible portion of the page
+"""
 
         user_message = self.llm_client.create_user_message_with_images(
             user_prompt, [self.browser.current_page.screenshot], "high"
