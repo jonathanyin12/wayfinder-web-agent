@@ -40,6 +40,7 @@ class AgentBrowserPage:
         self.previous_screenshot = ""
         self.screenshot = ""
         self.bounding_box_screenshot = ""
+        self.full_page_screenshot = ""
         self.previous_page_url = ""
         self.page_overview = ""
         self.output_dir = output_dir
@@ -67,8 +68,15 @@ class AgentBrowserPage:
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 if not self.page:
                     raise RuntimeError("Browser page is not initialized")
-
-                return await action_func(self.page, *args, **kwargs)
+                if name == "find":
+                    return await action_func(
+                        page=self.page,
+                        full_page_screenshot=self.full_page_screenshot,
+                        *args,
+                        **kwargs,
+                    )
+                else:
+                    return await action_func(self.page, *args, **kwargs)
 
             return wrapper
         raise AttributeError(
@@ -90,6 +98,7 @@ class AgentBrowserPage:
             full_page_screenshot = await take_screenshot(
                 self.page, save_path=save_path, full_page=True
             )
+            self.full_page_screenshot = full_page_screenshot
             tasks.append(
                 asyncio.create_task(get_page_overview(self.page, full_page_screenshot))
             )
