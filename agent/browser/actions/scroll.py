@@ -102,10 +102,12 @@ Guidelines:
 - It is possible that what you are looking for is not on the page.
 - If you found multiple possible matches, respond with the one that you feel is the most likely to be the one the user is looking for.
 
+In your response, don't mention what screenshot you found the content in since the page will be scrolled to the appropriate position.
+
 Respond with a JSON object with the following fields:
 {{
     "found": <true if you found the content, false otherwise>,
-    "response": <"whether you found the content or not, and where it is in the screenshot">,
+    "response": <"your response to the user">,
     "screenshot_index": <the index of the screenshot that contains the content, if found, otherwise -1>,
 }}
 """
@@ -117,7 +119,6 @@ Respond with a JSON object with the following fields:
         return "Find tool failed to return a response"
 
     response_json = json.loads(response.content)
-    print(response_json)
 
     # If content was found, scroll to the appropriate position in the page
     if response_json["screenshot_index"] != -1:
@@ -127,8 +128,5 @@ Respond with a JSON object with the following fields:
 
         # Scroll to that position in the page
         await page.evaluate(f"window.scrollTo(0, {scroll_position});")
-        print(f"Scrolled to position {scroll_position} where content was found")
-    else:
-        print("Content not found on page, no scrolling performed")
 
     return response_json["response"]
