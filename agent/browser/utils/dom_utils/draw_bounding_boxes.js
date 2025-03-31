@@ -3,7 +3,7 @@
   if (!indices || indices.length === 0) {
     indices = Array.from(document.querySelectorAll("[data-gwa-id]")).map(
       (el) => {
-        const id = el.getAttribute("data-gwa-id");
+        const id = el.getAttribute("data-bbox-gwa-id");
         return parseInt(id?.replace("gwa-element-", "") || "0");
       }
     );
@@ -22,7 +22,7 @@
   // Draw new annotations
   indices.forEach((index) => {
     const element = document.querySelector(
-      `[data-gwa-id="gwa-element-${index}"]`
+      `[data-bbox-gwa-id="gwa-element-${index}"]`
     );
     if (!element) return;
 
