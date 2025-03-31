@@ -130,7 +130,7 @@ class AgentBrowser:
         """
 
         action_response = None
-        if action.name == "finish_task":
+        if action.name == "end_task":
             pass
         elif action.name == "switch_tab":
             await self.switch_tab(action.args["tab_index"])

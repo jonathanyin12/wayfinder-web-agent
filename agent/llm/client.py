@@ -49,6 +49,7 @@ class LLMClient:
         attempt: int = 0,
         timeout: int = 120,
         json_format: bool = True,
+        reasoning_effort: Optional[Literal["low", "medium", "high"]] = "high",
     ) -> ChatCompletionMessage:
         """Helper method to make LLM API calls with retry logic"""
         try:
@@ -58,7 +59,7 @@ class LLMClient:
             if model.startswith("gpt-4o"):
                 kwargs["temperature"] = 0.0
             if model.startswith("o"):
-                kwargs["reasoning_effort"] = "high"
+                kwargs["reasoning_effort"] = reasoning_effort
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "required"
