@@ -13,9 +13,7 @@ llm_client = LLMClient()
 
 
 @browser_action
-async def find(
-    content_to_find: str, page: Page, full_page_screenshot: str
-) -> Tuple[bool, str]:
+async def find(content_to_find: str, page: Page, full_page_screenshot: str) -> str:
     """Find an element on the page that matches the instruction, scrolling to it if necessary"""
 
     # Convert base64 screenshot to PIL Image
@@ -65,7 +63,7 @@ Respond with a JSON object with the following fields:
     response = await llm_client.make_call([user_message], "gpt-4o")
 
     if not response.content:
-        return False, "Find tool failed to return a response"
+        return "Find tool failed to return a response"
 
     response_json = json.loads(response.content)
     print(response_json)
@@ -82,4 +80,4 @@ Respond with a JSON object with the following fields:
     else:
         print("Content not found on page, no scrolling performed")
 
-    return response_json["found"], response_json["response"]
+    return response_json["response"]
