@@ -3,6 +3,9 @@
   document.querySelectorAll("[data-gwa-id]").forEach((el) => {
     el.removeAttribute("data-gwa-id");
   });
+  document.querySelectorAll("[data-bbox-gwa-id]").forEach((el) => {
+    el.removeAttribute("data-bbox-gwa-id");
+  });
 
   const elements = Array.from(
     document.querySelectorAll(
@@ -230,20 +233,24 @@
         simplified_html + ">" + innerText + "</" + tagName + ">";
       simplified_html = simplified_html.replace(/\s+/g, " ").trim();
 
-      // Determine the element to which we'll add the data-gwa-id attribute
-      let targetElement = element;
+      element.setAttribute("data-gwa-id", `gwa-element-${visibleIndex}`);
 
-      // For these elements, use the parent element that contains the label
+      // For these elements, use the parent element that contains the label for the bounding box
       if (
         tagName === "input" ||
         tagName === "textarea" ||
         tagName === "select"
       ) {
-        targetElement = getParentWithLabel(element);
+        const bboxElement = getParentWithLabel(element);
+        bboxElement.setAttribute(
+          "data-bbox-gwa-id",
+          `gwa-element-${visibleIndex}`
+        );
+      } else {
+        element.setAttribute("data-bbox-gwa-id", `gwa-element-${visibleIndex}`);
       }
 
       // Set a data attribute to uniquely identify the element using the visible index
-      targetElement.setAttribute("data-gwa-id", `gwa-element-${visibleIndex}`);
 
       // Store simplified HTML with visible index as key
       element_simplified_htmls[visibleIndex] = simplified_html;
