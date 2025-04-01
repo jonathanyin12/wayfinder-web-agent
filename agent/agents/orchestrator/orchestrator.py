@@ -88,7 +88,9 @@ You are responsible for planning and delegating tasks to the web browsing assist
             )
 
             print(formatted_result)
-        return result, iteration, time.time() - start_time
+
+        final_response = await self._prepare_final_response()
+        return final_response, iteration, time.time() - start_time
 
     async def _decide_next_task(self):
         """Make a plan for the next task"""
@@ -119,7 +121,7 @@ Previous plan:
 - Provide all the context needed to complete the next step within the instructions. The web browsing assistant won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
 
 
-If the objective is complete and there are no more steps to take, just say "objective complete" for the next step.
+If the objective is complete, just say "objective complete" for the next step.
 
 
 Output your plan in JSON format.
@@ -216,4 +218,29 @@ Summarize what the web browsing assistant did according to the screenshots and d
         if not response.content:
             raise ValueError("No response from LLM")
 
+        return response.content
+
+    async def _prepare_final_response(self) -> str:
+        """Prepare the final response to relay to the user"""
+
+        user_message = ChatCompletionUserMessageParam(
+            role="user",
+            content="""Provide a final response about the completed web browsing task. Include:
+1. A summary of what happened
+2. (If applicable) Detailed information gathered during the task (e.g., product specifications, prices, availability, recipes, reviews, etc.)
+
+Make sure to include all relevant information that fulfills the original objective.""",
+        )
+
+        response = await self.llm_client.make_call(
+            [
+                *self.message_history,
+                user_message,
+            ],
+            "gpt-4o",
+            json_format=False,
+        )
+        if not response.content:
+            raise ValueError("No response from LLM")
+        print(f"Final response: {response.content}")
         return response.content
