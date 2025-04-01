@@ -110,10 +110,7 @@ Here is an overview of the current page:
         """
         # Get the action prompt and prepare the user message with image
         action_prompt = await self._get_action_prompt()
-        images = [
-            self.browser.current_page.screenshot,
-            self.browser.current_page.bounding_box_screenshot,
-        ]
+        images = [self.browser.current_page.bounding_box_screenshot]
         user_message = self.llm_client.create_user_message_with_images(
             action_prompt, images, detail="high"
         )
@@ -229,9 +226,8 @@ Finally, respond with a JSON object with the following fields:
 OPEN BROWSER TABS:
 {tabs}
 
-SCREENSHOTS: 
-First screenshot: the current visible portion of the page.
-Second screenshot: the current visible portion of the page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
+SCREENSHOT: 
+the current visible portion of the page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
 
 PAGE POSITION:
 {page_position}
@@ -252,10 +248,13 @@ CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
             if action_result_str is None:
                 message = f"""Based on the two screenshots, evaluate whether the following action was completed successfully.
 
-Action: {action.description}
+Intended action: {action.description}
+
+Action performed: {action.name} {f"(on {action.element.get('description', '')})" if action.element else ""}
 
 The first screenshot is the state of the page before the action, and the second screenshot is the state of the page after the action. Consider what UX changes are expected for the action.
 - If no visible change occured, consider why e.g. perhaps the action was selecting on option that was already selected.
+- Make sure the intended action was actually completed. 
 
 Output your verdict as a JSON object with the following fields:
 {{

@@ -107,7 +107,6 @@ You are responsible for planning and delegating tasks to the web browsing assist
 - Consider the things that have already been done and what still needs to be done.
 - Update the previous plan if it is no longer valid (e.g. need to backtrack). Make sure to remove any steps that have already been completed.
 - It's okay to be unsure or less detailed about later steps.
-- You can evaluate whether previous steps were successful or not, but don't include that in the plan unless a mistake was made and it needs to be corrected.
 
 Previous plan:
 {self.plan}
@@ -115,10 +114,9 @@ Previous plan:
 
 2. Then, output what should be done next according to the plan (typically the first step). This information will be passed to the web browsing assistant.
 - Study the screenshot and page overview to understand the current state of the page.
-- This should only focus on the current page and not future pages.
+- Make sure the task is actually possible and focuses on the current page and not future pages.
 - Avoid ambiguity. Don't say something vague like "explore/review the results". The scope should also be clear. 
-- Focus more on outcomes rather than prescribing specific actions.
-- Provide all the context needed to complete the next step within the instructions. The task executor won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
+- Provide all the context needed to complete the next step within the instructions. The web browsing assistant won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
 
 
 If the objective is complete and there are no more steps to take, just say "objective complete" for the next step.
@@ -160,12 +158,6 @@ Screenshot: shows the current visible portion of the page
                 user_message,
             ],
             self.model,
-        )
-        self.llm_client.print_message_history(
-            [
-                *self.message_history,
-                user_message,
-            ]
         )
         if not response.content:
             raise ValueError("No response from LLM")
