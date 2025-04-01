@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from openai.types.chat.chat_completion_assistant_message_param import (
     ChatCompletionAssistantMessageParam,
@@ -45,13 +45,15 @@ class TaskExecutor:
         self.max_iterations = 5
         self.model = "gpt-4o"
         self.message_history: List[ChatCompletionMessageParam] = []
+        self.screenshot_history: List[str] = []
 
         self.include_captcha_check = False
 
-    async def run(self):
+    async def run(self) -> Tuple[str, List[str]]:
         print(f"Starting task: {self.task}")
         iteration = 0
         while iteration < self.max_iterations:
+            self.screenshot_history.append(self.browser.current_page.screenshot)
             # Check for captcha first before planning the next action
             if self.include_captcha_check and await self.browser.check_for_captcha():
                 await self._wait_for_human_input()
@@ -73,9 +75,15 @@ class TaskExecutor:
         self.llm_client.print_token_usage()
 
         if iteration >= self.max_iterations:
-            return False, "Failed to complete task"
+            return (
+                f"Failed to complete task within {self.max_iterations} iterations",
+                self.screenshot_history,
+            )
 
-        return True, action.args.get("final_response")
+        return (
+            action.args.get("final_response", ""),
+            self.screenshot_history,
+        )
 
     def _get_system_prompt(self) -> str:
         return f"""You are a web browsing assistant helping to complete the following task: "{self.task}"
