@@ -1,6 +1,6 @@
 import json
 import time
-from typing import List
+from typing import List, Tuple
 
 from openai.types.chat.chat_completion_assistant_message_param import (
     ChatCompletionAssistantMessageParam,
@@ -35,7 +35,7 @@ class Orchestrator:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = 10
+        self.max_iterations = 15
         self.model = "o1"
         self.message_history: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
@@ -51,7 +51,7 @@ You are responsible for planning and delegating tasks to the web browsing assist
 
         self.plan = "No plan yet"
 
-    async def run(self):
+    async def run(self) -> Tuple[str, int, float]:
         start_time = time.time()
         iteration = 0
         while iteration < self.max_iterations:
@@ -72,7 +72,7 @@ You are responsible for planning and delegating tasks to the web browsing assist
                 self.browser,
                 self.output_dir,
             )
-            result, screenshot_history = await task_executor.run()
+            result, screenshot_history, iterations = await task_executor.run()
             evaluation = await self._evaluate_task_execution(
                 next_task,
                 result,
@@ -88,6 +88,7 @@ You are responsible for planning and delegating tasks to the web browsing assist
             )
 
             print(formatted_result)
+            iteration += iterations
 
         final_response = await self._prepare_final_response()
         return final_response, iteration, time.time() - start_time

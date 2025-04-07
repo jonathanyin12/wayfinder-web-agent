@@ -49,7 +49,7 @@ class TaskExecutor:
 
         self.include_captcha_check = False
 
-    async def run(self) -> Tuple[str, List[str]]:
+    async def run(self) -> Tuple[str, List[str], int]:
         print(f"Starting task: {self.task}")
         iteration = 0
         while iteration < self.max_iterations:
@@ -78,11 +78,13 @@ class TaskExecutor:
             return (
                 f"Failed to complete task within {self.max_iterations} iterations",
                 self.screenshot_history,
+                iteration,
             )
 
         return (
             action.args.get("final_response", ""),
             self.screenshot_history,
+            iteration,
         )
 
     def _get_system_prompt(self) -> str:
