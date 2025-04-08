@@ -2,7 +2,9 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import random
+import shutil
 import sys
 from datetime import datetime
 from typing import List, TypedDict
@@ -17,8 +19,20 @@ class TaskData(TypedDict):
     ques: str
 
 
-async def run_task(task: TaskData, model_provider: str, output_dir: str) -> None:
-    print(f"Running task {task['id']}")
+async def run_task(task: TaskData, output_dir: str) -> None:
+    # check if the task has already been run
+    if os.path.exists(f"{output_dir}/{task['id']}"):
+        if os.path.exists(f"{output_dir}/{task['id']}/metadata.json"):
+            print(f"Task {task['id']} already exists, skipping")
+            return
+        else:
+            print(
+                f"Task {task['id']} already exists, but metadata.json does not exist, running again"
+            )
+            shutil.rmtree(f"{output_dir}/{task['id']}")
+    else:
+        print(f"Running task {task['id']}")
+
     agent = WebAgent(
         objective=task["ques"],
         initial_url=task["web"],
@@ -28,7 +42,7 @@ async def run_task(task: TaskData, model_provider: str, output_dir: str) -> None
     await agent.run()
 
 
-async def main(max_concurrent_tasks: int, model_provider: str, output_dir: str) -> None:
+async def main(max_concurrent_tasks: int, output_dir: str) -> None:
     semaphore = asyncio.Semaphore(max_concurrent_tasks)
 
     tasks: List[TaskData] = []
@@ -42,27 +56,23 @@ async def main(max_concurrent_tasks: int, model_provider: str, output_dir: str) 
     tasks = [task for task in tasks if task["id"] not in impossible_tasks]
 
     # randomize the order of tasks
-    # random.seed(42)
-    # random.shuffle(tasks)
+    random.seed(42)
+    random.shuffle(tasks)
+    tasks = tasks[:10]
     print(f"Running {len(tasks)} tasks")
-
-    tasks = tasks[:5]
 
     async def run_task_with_semaphore(
         task: TaskData,
-        model_provider: str,
         semaphore: asyncio.Semaphore,
         output_dir: str,
     ) -> None:
         async with semaphore:
-            await run_task(task, model_provider, output_dir)
+            await run_task(task, output_dir)
 
     all_tasks = []
     for task in tasks:
         all_tasks.append(
-            asyncio.create_task(
-                run_task_with_semaphore(task, model_provider, semaphore, output_dir)
-            )
+            asyncio.create_task(run_task_with_semaphore(task, semaphore, output_dir))
         )
 
     await asyncio.gather(*all_tasks, return_exceptions=True)
@@ -76,17 +86,8 @@ if __name__ == "__main__":
         parser.add_argument(
             "--max-concurrent",
             type=int,
-            default=3,
+            default=5,
             help="Maximum number of concurrent tasks (default: 3)",
-        )
-        parser.add_argument(
-            "--model-provider",
-            type=str,
-            default="azure",
-            help="Model provider (default: azure)",
-            choices=[
-                "azure",
-            ],
         )
         parser.add_argument(
             "--output-dir",
@@ -98,7 +99,7 @@ if __name__ == "__main__":
 
         logging.info(f"Running with {args.max_concurrent} concurrent tasks")
 
-        asyncio.run(main(args.max_concurrent, args.model_provider, args.output_dir))
+        asyncio.run(main(args.max_concurrent, args.output_dir))
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt, shutting down...")
     except Exception as e:

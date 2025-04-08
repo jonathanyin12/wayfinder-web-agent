@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import time
+from typing import Any
 
 from openai import AzureOpenAI
 
@@ -37,7 +38,13 @@ SYSTEM_PROMPT = """As an evaluator, you will be presented with three primary com
 -- Note the difference: 1) Result response may contradict the screenshot, then the content of the screenshot prevails, 2) The content in the Result response is not mentioned on the screenshot, choose to believe the content.
 -- If you are not sure whether you should believe the content in the response, you should choose unknown.
 
-You should elaborate on how you arrived at your final evaluation and then provide a definitive verdict on whether the task has been successfully accomplished, either as 'SUCCESS', 'NOT SUCCESS', or 'UNKNOWN'."""
+You should elaborate on how you arrived at your final evaluation and then provide a definitive verdict on whether the task has been successfully accomplished, either as 'success', 'failed', or 'unknown'.
+
+Output a JSON object with the following format:
+{
+    "reasoning": <evaluation reasoning>,
+    "verdict": <success | failed | unknown>
+}"""
 
 USER_PROMPT = """TASK: <task>
 Result Response: <answer>
@@ -53,7 +60,8 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
     print(f"--------------------- {process_dir} ---------------------")
     cost = 0  # Initialize cost for this evaluation
 
-    with open(os.path.join(process_dir, "meta_data.json")) as fr:
+    metadata_file = os.path.join(process_dir, "metadata.json")
+    with open(metadata_file) as fr:
         metadata = json.load(fr)
 
     # Get the screenshots from the screenshots directory
@@ -90,8 +98,7 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
     ]
     while True:
         try:
-            print(f"Calling {api_model} API to get the auto evaluation......")
-            kwargs = {}
+            kwargs: dict[str, Any] = {"response_format": {"type": "json_object"}}
             if api_model.startswith("gpt-4o"):
                 kwargs["temperature"] = 0.0
             if api_model.startswith("o"):
@@ -125,20 +132,20 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
                 time.sleep(10)
     response = openai_response.choices[0].message.content
 
-    if response is None:
-        return "unknown", "", cost
-    elif "NOT SUCCESS" in response:
-        auto_eval_res = "failed"
-    elif "SUCCESS" in response:
-        auto_eval_res = "success"
-    elif "UNKNOWN" in response:
-        auto_eval_res = "unknown"
-    else:
-        auto_eval_res = "failed"
+    response = json.loads(response)
+    verdict = response["verdict"]
+    reasoning = response["reasoning"]
 
-    print("Auto_eval_res:", auto_eval_res)
+    print("Verdict:", verdict)
+    print("Reasoning:", reasoning)
 
-    return auto_eval_res, response, cost
+    # Add auto evaluation result to metadata
+    metadata["cost"] = round(cost, 4)
+    metadata["auto_eval"] = response
+    with open(metadata_file, "w") as f:
+        json.dump(metadata, f, indent=4)
+
+    return verdict, reasoning, cost
 
 
 def main():
@@ -177,17 +184,24 @@ def main():
         web_cost = 0  # Track cost per website
         for idx in range(0, 46):
             file_dir = os.path.join(args.process_dir, web + "--" + str(idx))
-            if os.path.exists(file_dir):
-                response, _, cost = auto_eval(
-                    file_dir, client, args.api_model, args.max_attached_imgs
-                )
-                web_task_res.append(response)
-                web_cost += cost
-                total_cost += cost
+            metadata_file = os.path.join(file_dir, "metadata.json")
+            if os.path.exists(metadata_file):
+                with open(metadata_file) as fr:
+                    metadata = json.load(fr)
+
+                # Skip if the auto evaluation result is already in the metadata
+                if "auto_eval" not in metadata:
+                    verdict, reasoning, cost = auto_eval(
+                        file_dir, client, args.api_model, args.max_attached_imgs
+                    )
+                    web_task_res.append(verdict)
+                    web_cost += cost
+                    total_cost += cost
             else:
                 pass
         if web_task_res:
-            print(f"{web} total cost: ${web_cost:.4f}")
+            print(f"\n{web} results:")
+            print(f"Total cost: ${web_cost:.4f}")
             print(web_task_res)
 
     print(f"\nTotal cost for all evaluations: ${total_cost:.4f}")

@@ -148,7 +148,13 @@ async def scroll(page: Page, content_to_find: str, full_page_screenshot: str):
         vertical_position = await _get_vertical_position(
             content_to_find, location, crops[screenshot_index]
         )
-        scroll_position = (screenshot_index + vertical_position - 0.5) * crop_height
+        scroll_position = max(
+            0,
+            min(
+                (screenshot_index + vertical_position - 0.5) * crop_height,
+                image.height - 1600,
+            ),
+        )
 
         await page.evaluate(f"window.scrollTo(0, {scroll_position});")
 
