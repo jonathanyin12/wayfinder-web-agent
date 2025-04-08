@@ -47,16 +47,6 @@ async def scroll_up(page: Page, amount: float = 0.75):
     )
 
 
-async def page_at_bottom(page: Page) -> bool:
-    """Check if the page is at the bottom"""
-    return await page.evaluate(
-        """() => {
-            const scrollingElement = document.scrollingElement || document.body;
-            return scrollingElement.scrollTop >= (scrollingElement.scrollHeight - window.innerHeight);
-        }"""
-    )
-
-
 async def _find_content_on_page(content_to_find: str, crops: list[str]) -> dict:
     """Find the content on the page using LLM and return the response."""
 
@@ -194,7 +184,7 @@ def get_screenshot_crops_with_labels(
             )
             font = None
         draw.text(
-            (crop.width - 75 * len(str(i)), crop.height - 125),
+            (crop.width - 100 * len(str(i)), crop.height - 125),
             str(i),
             fill="red",
             font=font,
