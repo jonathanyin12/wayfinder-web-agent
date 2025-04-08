@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 
 from playwright.async_api import Page
 
-from agent.agents.scroller.scroller import ScrollAgent
 from agent.browser.utils.preprocess_page import get_page_overview, preprocess_page
 from agent.browser.utils.screenshot import take_screenshot
 from agent.llm.client import LLMClient
@@ -70,15 +69,12 @@ class AgentBrowserPage:
                 if not self.page:
                     raise RuntimeError("Browser page is not initialized")
                 if name == "scroll":
-                    content_to_find = kwargs.get("content_to_find", None)
-                    if content_to_find:
-                        scroll_agent = ScrollAgent(
-                            content_to_find,
-                            self.page,
-                            self.full_page_screenshot,
-                        )
-                    return await scroll_agent.run()
-
+                    return await action_func(
+                        page=self.page,
+                        full_page_screenshot=self.full_page_screenshot,
+                        *args,
+                        **kwargs,
+                    )
                 else:
                     return await action_func(self.page, *args, **kwargs)
 
