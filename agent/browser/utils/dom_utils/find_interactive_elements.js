@@ -233,7 +233,21 @@
         simplified_html + ">" + innerText + "</" + tagName + ">";
       simplified_html = simplified_html.replace(/\s+/g, " ").trim();
 
-      element.setAttribute("data-gwa-id", `gwa-element-${visibleIndex}`);
+      if (tagName === "input") {
+        const rect = element.getBoundingClientRect();
+        if (rect.width < 5 && rect.height < 5) {
+          // If the input is too small, use the parent element that contains the label for actual interaction
+          const parentWithLabel = getParentWithLabel(element);
+          parentWithLabel.setAttribute(
+            "data-gwa-id",
+            `gwa-element-${visibleIndex}`
+          );
+        } else {
+          element.setAttribute("data-gwa-id", `gwa-element-${visibleIndex}`);
+        }
+      } else {
+        element.setAttribute("data-gwa-id", `gwa-element-${visibleIndex}`);
+      }
 
       // For these elements, use the parent element that contains the label for the bounding box
       if (
