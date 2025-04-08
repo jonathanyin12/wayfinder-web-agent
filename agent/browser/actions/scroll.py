@@ -93,13 +93,13 @@ Respond with a JSON object with the following fields:
 
 async def _get_vertical_position(content_to_find: str, screenshot: str) -> float:
     """Get the vertical position of the content on the page"""
-    prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot.
+    prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the exact middle of the screenshot, and 1 means the content is at the bottom of the screenshot.
 
 Here is the content you are looking for: {content_to_find}
 
 Respond with a JSON object with the following field:
 {{
-    "vertical_position": <the vertical position of the content on the screenshot as a float between 0 and 1, where 0 is the top of the screenshot and 1 is the bottom of the screenshot. If the content is not present, return -1>,
+    "vertical_position": <a float between 0 and 1. If the content is not present, return -1>,
 }}"""
 
     user_message = llm_client.create_user_message_with_images(
