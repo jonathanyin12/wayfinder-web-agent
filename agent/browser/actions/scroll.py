@@ -98,7 +98,7 @@ async def _get_vertical_position(
     content_to_find: str, location: str, screenshot: str
 ) -> float:
     """Get the vertical position of the content on the page"""
-    prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the exact middle of the screenshot, and 1 means the content is at the bottom of the screenshot.
+    prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the exact middle of the screenshot, and 1 means the content is at the bottom of the screenshot. If you can't find the content, make an educated guess based on the description of the location of the content.
 
 Here is the content you are looking for: {content_to_find}
 
@@ -106,7 +106,7 @@ Description of the location of the content: {location}
 
 Respond with a JSON object with the following field:
 {{
-    "vertical_position": <a float between 0 and 1. If the content is not present, return -1>,
+    "vertical_position": <a float between 0 and 1.>,
 }}"""
 
     user_message = llm_client.create_user_message_with_images(
@@ -119,7 +119,13 @@ Respond with a JSON object with the following field:
         return -1
 
     response_json = json.loads(response.content)
-    return float(response_json["vertical_position"])
+    vertical_position = float(response_json["vertical_position"])
+    if vertical_position < 0.0 or vertical_position > 1.0:
+        print(
+            f"Vertical position out of range {vertical_position}, falling back to 0.5 (center of the page)"
+        )
+        return 0.5
+    return vertical_position
 
 
 @browser_action
@@ -141,13 +147,7 @@ async def scroll(page: Page, content_to_find: str, full_page_screenshot: str):
         vertical_position = await _get_vertical_position(
             content_to_find, location, crops[screenshot_index]
         )
-        if 0.0 <= vertical_position <= 1.0:
-            scroll_position = (screenshot_index + vertical_position - 0.5) * crop_height
-        else:
-            print(
-                f"Content vertical position not found, falling back to screenshot index {screenshot_index}"
-            )
-            scroll_position = screenshot_index * crop_height
+        scroll_position = (screenshot_index + vertical_position - 0.5) * crop_height
 
         await page.evaluate(f"window.scrollTo(0, {scroll_position});")
 
