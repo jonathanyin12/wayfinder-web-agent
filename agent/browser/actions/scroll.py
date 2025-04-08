@@ -136,9 +136,29 @@ async def scroll(page: Page, content_to_find: str, full_page_screenshot: str):
             scroll_position = (screenshot_index + vertical_position - 0.5) * crop_height
         else:
             scroll_position = screenshot_index * crop_height
-        await page.evaluate(f"window.scrollTo(0, {scroll_position});")
+
+        # Move mouse to the center of the screen to ensure focus
+        await page.mouse.move(600, 800)
+
+        # await page.evaluate(f"window.scrollTo(0, {scroll_position});") # This doesn't work on certain pages like https://pillow.readthedocs.io/en/stable/reference/ImageFont.html
+
+        current_scroll_position = await page.evaluate(
+            """() => {
+                return (document.scrollingElement || document.body).scrollTop;
+            }"""
+        )
+        while current_scroll_position < scroll_position:
+            await scroll_down(page, 0.2)
+            await page.wait_for_timeout(500)  # Wait for 100 milliseconds
+            current_scroll_position = await page.evaluate(
+                """() => {
+                    return (document.scrollingElement || document.body).scrollTop;
+                }"""
+            )
+            print(f"Current scroll position: {current_scroll_position}")
+
         print(
-            f"Screenshot index: {screenshot_index}, vertical position: {vertical_position}"
+            f"Screenshot index: {screenshot_index}, vertical position: {vertical_position}, scroll position: {scroll_position}"
         )
     return output
 
@@ -191,6 +211,9 @@ def get_screenshot_crops_with_labels(
             stroke_width=10,
             stroke_fill="white",
         )
+
+        # Save the crop to a file
+        crop.save(f"crop_{i}.png")
 
         # Convert to base64
         buffered = io.BytesIO()
