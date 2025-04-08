@@ -64,7 +64,8 @@ Respond with a JSON object with the following fields:
 {{
     "found": <true if you found the content, false otherwise>,
     "response": <"your response to the user">,
-    "screenshot_index": <the index of the screenshot that contains the content, if found, otherwise -1>,
+    "screenshot_index": <the index of the screenshot that contains the content, if found, otherwise -1.>,
+    "location": <the location of the content on the screenshot, if found, otherwise n/a.>,
 }}"""
 
     user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
@@ -76,6 +77,7 @@ Respond with a JSON object with the following fields:
             "found": False,
             "response": "Find tool failed to return a response",
             "screenshot_index": -1,
+            "location": "n/a",
         }
 
     try:
@@ -88,14 +90,19 @@ Respond with a JSON object with the following fields:
             "found": False,
             "response": "Find tool returned invalid JSON",
             "screenshot_index": -1,
+            "location": "n/a",
         }
 
 
-async def _get_vertical_position(content_to_find: str, screenshot: str) -> float:
+async def _get_vertical_position(
+    content_to_find: str, location: str, screenshot: str
+) -> float:
     """Get the vertical position of the content on the page"""
     prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the exact middle of the screenshot, and 1 means the content is at the bottom of the screenshot.
 
 Here is the content you are looking for: {content_to_find}
+
+Description of the location of the content: {location}
 
 Respond with a JSON object with the following field:
 {{
@@ -105,9 +112,10 @@ Respond with a JSON object with the following field:
     user_message = llm_client.create_user_message_with_images(
         prompt, [screenshot], "high"
     )
-    response = await llm_client.make_call([user_message], "gpt-4o")
+    response = await llm_client.make_call([user_message], "o1")
 
     if not response.content:
+        print("Get vertical position tool failed to return a response")
         return -1
 
     response_json = json.loads(response.content)
@@ -126,39 +134,46 @@ async def scroll(page: Page, content_to_find: str, full_page_screenshot: str):
     found = find_result["found"]
     output = find_result["response"]
     screenshot_index = find_result["screenshot_index"]
+    location = find_result["location"]
 
     # If content was found, scroll to the appropriate position in the page
     if found and screenshot_index >= 0 and screenshot_index < len(crops):
         vertical_position = await _get_vertical_position(
-            content_to_find, crops[screenshot_index]
+            content_to_find, location, crops[screenshot_index]
         )
         if 0.0 <= vertical_position <= 1.0:
             scroll_position = (screenshot_index + vertical_position - 0.5) * crop_height
         else:
+            print(
+                f"Content vertical position not found, falling back to screenshot index {screenshot_index}"
+            )
             scroll_position = screenshot_index * crop_height
 
-        # Move mouse to the center of the screen to ensure focus
-        await page.mouse.move(600, 800)
-
-        # await page.evaluate(f"window.scrollTo(0, {scroll_position});") # This doesn't work on certain pages like https://pillow.readthedocs.io/en/stable/reference/ImageFont.html
+        await page.evaluate(f"window.scrollTo(0, {scroll_position});")
 
         current_scroll_position = await page.evaluate(
             """() => {
                 return (document.scrollingElement || document.body).scrollTop;
             }"""
         )
-        while current_scroll_position < scroll_position:
-            await scroll_down(page, 0.2)
-            await page.wait_for_timeout(500)  # Wait for 100 milliseconds
-            current_scroll_position = await page.evaluate(
-                """() => {
-                    return (document.scrollingElement || document.body).scrollTop;
-                }"""
+        if scroll_position != current_scroll_position:
+            # This helps with pages like https://pillow.readthedocs.io/en/stable/reference/ImageFont.html
+            print(
+                f"Scroll position mismatch: {scroll_position} != {current_scroll_position}, falling back to iterative scrolling"
             )
-            print(f"Current scroll position: {current_scroll_position}")
+            # Move mouse to the center of the screen to ensure focus
+            await page.mouse.move(600, 800)
+            while current_scroll_position < scroll_position:
+                await scroll_down(page, 0.2)
+                await page.wait_for_timeout(500)  # Wait for 100 milliseconds
+                current_scroll_position = await page.evaluate(
+                    """() => {
+                        return (document.scrollingElement || document.body).scrollTop;
+                    }"""
+                )
 
         print(
-            f"Screenshot index: {screenshot_index}, vertical position: {vertical_position}, scroll position: {scroll_position}"
+            f"Screenshot index: {screenshot_index}, location: {location}, vertical position: {vertical_position}, scroll position: {scroll_position}"
         )
     return output
 
