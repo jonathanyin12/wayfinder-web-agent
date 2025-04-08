@@ -50,7 +50,7 @@ async def scroll_up(page: Page, amount: float = 0.75):
 async def _find_content_on_page(content_to_find: str, crops: list[str]) -> dict:
     """Find the content on the page using LLM and return the response."""
 
-    prompt = f"""You are a helpful assistant tasked with finding content on a page. You can see the page via the screenshots. The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page. The screenshots are indexed from 0 to {len(crops) - 1}, with index 0 being the first screenshot and {len(crops) - 1} being the last screenshot. The screenshot index is also written in the bottom right corner of each screenshot.
+    prompt = f"""You are a helpful assistant tasked with finding content on a page. You can see the page via the screenshots. The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page. The screenshots are indexed from 0 to {len(crops) - 1}, with index 0 being the first screenshot and {len(crops) - 1} being the last screenshot. The screenshot index is also written in red in the bottom right corner of each screenshot.
 
 Here is what you are looking for: {content_to_find}
 
@@ -156,7 +156,7 @@ async def scroll(page: Page, content_to_find: str, full_page_screenshot: str):
                 return (document.scrollingElement || document.body).scrollTop;
             }"""
         )
-        if scroll_position != current_scroll_position:
+        if abs(scroll_position - current_scroll_position) > 100:
             # This helps with pages like https://pillow.readthedocs.io/en/stable/reference/ImageFont.html
             print(
                 f"Scroll position mismatch: {scroll_position} != {current_scroll_position}, falling back to iterative scrolling"
@@ -172,9 +172,6 @@ async def scroll(page: Page, content_to_find: str, full_page_screenshot: str):
                     }"""
                 )
 
-        print(
-            f"Screenshot index: {screenshot_index}, location: {location}, vertical position: {vertical_position}, scroll position: {scroll_position}"
-        )
     return output
 
 
@@ -226,9 +223,6 @@ def get_screenshot_crops_with_labels(
             stroke_width=10,
             stroke_fill="white",
         )
-
-        # Save the crop to a file
-        crop.save(f"crop_{i}.png")
 
         # Convert to base64
         buffered = io.BytesIO()
