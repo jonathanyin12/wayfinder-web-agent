@@ -42,7 +42,7 @@ class TaskExecutor:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = 5
+        self.max_iterations = 10
         self.model = "o1"
         self.message_history: List[ChatCompletionMessageParam] = []
         self.screenshot_history: List[str] = []

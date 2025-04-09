@@ -48,7 +48,7 @@ class Orchestrator:
         information_needed = await self._identify_information_needed()
         system_prompt = f"""You are a helpful manager that is tasked with overseeing the completion of the following objective: '{self.objective}'."""
         if information_needed:
-            system_prompt += f"\n\nHere is the information likely needed to complete the objective: {information_needed}"
+            system_prompt += f"\n\nHere is the information likely needed to complete the objective: {information_needed}\n\nBefore deeming the objective complete, make sure to have extracted all the information needed since the user will only be able to see the text in your final response."
 
         self.message_history.append(
             ChatCompletionSystemMessageParam(
@@ -128,8 +128,12 @@ class Orchestrator:
             pixels_below,
         )
         user_prompt = f"""TASK:
-1. Make a rough plan to complete the objective from the current state. Objective: {self.objective}
-- Consider the things that have already been done and what still needs to be done. Is there more information needed to complete the objective?
+1. Give a progress summary
+- Briefly describe what has been done so far and what still needs to be done.
+- Has all the information requested in the objective been extracted and is present in the message history?
+
+
+2. Make a new plan to complete the objective from the current state.
 - Update the previous plan if it is no longer valid (e.g. need to backtrack). Make sure to remove any steps that have already been completed.
 - It's okay to be unsure or less detailed about later steps.
 
@@ -137,14 +141,13 @@ Previous plan:
 {self.plan}
 
 
-2. Then, output what should be done next according to the plan (typically the first step). This information will be passed to the web browsing assistant.
+3. Then, output what should be done next according to the plan (typically the first step). This information will be passed to the web browsing assistant.
 - Study the screenshot and page overview to understand the current state of the page.
 - Make sure the task is actually possible and focuses on the current page and not future pages.
 - Avoid ambiguity. Don't say something vague like "explore/review the results". The scope should also be clear. 
 - Provide all the context needed to complete the next step within the instructions. The web browsing assistant won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
 
-
-If the objective is complete, just say "objective complete" for the next step. Make sure you have all the information requested in the objective before saying "objective complete".
+If you have completed the objective and extracted all the information requested, say "objective complete" for the next step.
 
 
 Output your plan in JSON format.
@@ -171,12 +174,6 @@ Screenshot: shows the current visible portion of the page
         user_message = self.llm_client.create_user_message_with_images(
             user_prompt, [self.browser.current_page.screenshot], "high"
         )
-        # self.llm_client.print_message_history(
-        #     [
-        #         *self.message_history,
-        #         user_message,
-        #     ]
-        # )
         response = await self.llm_client.make_call(
             [
                 *self.message_history,
@@ -188,9 +185,12 @@ Screenshot: shows the current visible portion of the page
             raise ValueError("No response from LLM")
 
         response_json = json.loads(response.content)
-        print(json.dumps(response_json, indent=4))
+        progress = response_json["progress"]
         plan = response_json["plan"]
         next_step = response_json["next_step"]
+        print(f"Progress: {progress}")
+        print(f"Plan: {plan}")
+        print(f"Next step: {next_step}")
         self.plan = plan
 
         return next_step
