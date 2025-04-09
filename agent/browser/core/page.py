@@ -68,7 +68,7 @@ class AgentBrowserPage:
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 if not self.page:
                     raise RuntimeError("Browser page is not initialized")
-                if name == "scroll":
+                if name == "scroll_to_content":
                     return await action_func(
                         page=self.page,
                         full_page_screenshot=self.full_page_screenshot,

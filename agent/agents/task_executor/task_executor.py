@@ -93,12 +93,19 @@ class TaskExecutor:
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
 - type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
-- scroll (content_to_find: str): scroll to find content on the page. Use this if you need to find something that is not currently visible e.g. a button that is not visible. Provide as much context/detail as possible about what you are looking for.
-- extract (information_to_extract: str): Extracts specific textual information from the current page based on a descriptive query of what you are looking for e.g. "the headline of the news article", "the first paragraph of the blog post" etc. Use this when you need particular pieces of information rather than interacting with elements.
+- scroll (direction: up | down, amount: float = 0.75): manually scroll the page in the given direction by the given amount
+- scroll_to_content (content_to_find: str): automatically scroll to specific content on the page. Use this if you need to find something that is not currently visible e.g. a button that is not visible. Provide as much context/detail as possible about what you are looking for.
+- extract (information_to_extract: str): Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for e.g. "recipe and ingredients", "first paragraph", "top comment" etc.
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
-- end_task (final_response: str): declare that you have completed the task and provide a final response
+- end_task: declare that you have completed the task
+
+
+Guidelines:
+- Always use the extract action if you need to extract specific information from the page (recipe, top comment, title, etc.), even if you can see the information on the page.
+- If you need to find a specific element on the page to interact with (e.g. a button, link, etc.), use the scroll_to_content action instead of the scroll action. Only use the scroll action if you need to view more of the page.
+- When searching via a search bar, use a more general keyword query if a more specific query is not working.
 
 
 Here is an overview of the current page:
