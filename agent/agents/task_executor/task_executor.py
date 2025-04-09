@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, List, Tuple
 
 from openai.types.chat.chat_completion_assistant_message_param import (
@@ -30,28 +31,27 @@ from ...llm import LLMClient
 class TaskExecutor:
     def __init__(
         self,
-        objective: str,
         task: str,
         llm_client: LLMClient,
         browser: AgentBrowser,
         output_dir: str,
-        max_iterations: int = 10,
+        max_iterations: int = 15,
     ):
-        self.objective = objective
         self.task = task
         self.llm_client = llm_client
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = min(max_iterations, 10)
-        self.model = "o1"
+        self.max_iterations = min(max_iterations, 15)
+        self.model = "gpt-4o"
         self.message_history: List[ChatCompletionMessageParam] = []
         self.screenshot_history: List[str] = []
 
         self.include_captcha_check = False
 
-    async def run(self) -> Tuple[str, List[str], int]:
+    async def run(self) -> Tuple[str, List[str], int, float]:
         print(f"Starting task: {self.task}")
+        start_time = time.time()
         iteration = 0
         while iteration < self.max_iterations:
             self.screenshot_history.append(self.browser.current_page.screenshot)
@@ -80,12 +80,14 @@ class TaskExecutor:
                 f"Failed to complete task within {self.max_iterations} iterations",
                 self.screenshot_history,
                 iteration,
+                time.time() - start_time,
             )
         task_output = await self._prepare_task_output()
         return (
             task_output,
             self.screenshot_history,
             iteration,
+            time.time() - start_time,
         )
 
     def _get_system_prompt(self) -> str:
@@ -108,9 +110,6 @@ Guidelines:
 - If you need to find a specific element on the page to interact with (e.g. a button, link, etc.), use the scroll_to_content action instead of the scroll action. Only use the scroll action if you need to view more of the page.
 - When searching via a search bar, use a more general keyword query if a more specific query is not working.
 
-
-Here is an overview of the current page:
-{self.browser.current_page.page_overview}
 """
 
     async def _choose_next_action(self) -> AgentAction:
@@ -207,18 +206,20 @@ Here is an overview of the current page:
         page = self.browser.current_page
         pixels_above, pixels_below = await page.get_pixels_above_below()
         page_position = get_formatted_page_position(pixels_above, pixels_below)
+        page_overview = page.page_overview
         interactable_elements = get_formatted_interactable_elements(
             pixels_above, pixels_below, page.elements
         )
         tabs = await get_formatted_tabs(self.browser)
         return f"""TASK:
-1. Reason about whether you have completed the task.
-- Consider the actions you have already taken and the progress you have made.
-- Don't interpret the task too narrowly.
+1. Give a progress summary
+- Briefly describe what has been done so far and what still needs to be done.
+- Is the objective complete?
+- Has all the information requested in the objective been extracted and is present in the message history?
+
 
 2. Reason about what action to take next.
 - Consider the elements you can currently see and interact with on the page.
-- Use the scroll action if you need to find something that is not currently visible.
 - Don't repeatedly try actions that aren't working. Find an alternative strategy.
 - If the task is complete, respond with the action "end_task".
 
@@ -241,6 +242,9 @@ the current visible portion of the page with bounding boxes drawn around interac
 
 PAGE POSITION:
 {page_position}
+
+PAGE OVERVIEW:
+{page_overview}
 
 CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
 {interactable_elements}

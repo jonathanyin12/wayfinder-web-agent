@@ -70,14 +70,18 @@ class Orchestrator:
                 )
             )
             task_executor = TaskExecutor(
-                self.objective,
                 next_task,
                 self.llm_client,
                 self.browser,
                 self.output_dir,
                 max_iterations=self.max_iterations - iteration,
             )
-            task_output, screenshot_history, iterations = await task_executor.run()
+            (
+                task_output,
+                screenshot_history,
+                iterations,
+                execution_time,
+            ) = await task_executor.run()
             evaluation = await self._evaluate_task_execution(
                 next_task,
                 task_output,
@@ -138,7 +142,8 @@ Information needed:
 {self.information_needed if self.information_needed else "None"}
 
 
-2. Make a new plan to complete the objective from the current state.
+2. Make a basic plan to complete the objective from the current state.
+- Keep the plan simple and straightforward. Don't overcomplicate things. Only do what is necessary to complete the objective.
 - Update the previous plan if it is no longer valid (e.g. need to backtrack). Make sure to remove any steps that have already been completed.
 - It's okay to be unsure or less detailed about later steps.
 
@@ -146,10 +151,10 @@ Previous plan:
 {self.plan}
 
 
-3. Then, output what should be done next according to the plan (typically the first step). This information will be passed to the web browsing assistant.
+3. Provide instructions for what should be done next on the current page.
 - Study the screenshot and page overview to understand the current state of the page.
 - Make sure the task is actually possible and focuses on the current page and not future pages.
-- Avoid ambiguity. Don't say something vague like "explore/review the results". The scope should also be clear. 
+- Avoid ambiguity. Don't say something vague like "explore/review the results". The scope should also be clear.
 - Provide all the context needed to complete the next step within the instructions. The web browsing assistant won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
 
 If you have completed the objective and extracted all the information requested, say "objective complete" for the next step.
@@ -158,7 +163,7 @@ If you have completed the objective and extracted all the information requested,
 Output your plan in JSON format.
 {{
     "progress": <brief summary of what has been done so far>
-    "plan": <description of the overall plan, in markdown format>
+    "plan": <description of the  plan, in markdown format>
     "next_step": <what should be done next>
 }}
 
