@@ -140,7 +140,6 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
     print("Reasoning:", reasoning)
 
     # Add auto evaluation result to metadata
-    metadata["cost"] = round(cost, 4)
     metadata["auto_eval"] = response
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=4)
@@ -150,7 +149,7 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--process_dir", type=str, default="results")
+    parser.add_argument("--output_dir", type=str, default="results")
 
     parser.add_argument("--api_model", default="o1", type=str, help="api model name")
     parser.add_argument("--max_attached_imgs", type=int, default=15)
@@ -183,7 +182,7 @@ def main():
         web_task_res = []
         web_cost = 0  # Track cost per website
         for idx in range(0, 46):
-            file_dir = os.path.join(args.process_dir, web + "--" + str(idx))
+            file_dir = os.path.join(args.output_dir, web + "--" + str(idx))
             metadata_file = os.path.join(file_dir, "metadata.json")
             if os.path.exists(metadata_file):
                 with open(metadata_file) as fr:

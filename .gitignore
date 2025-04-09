@@ -176,3 +176,4 @@ runs/
 eval/webvoyager/
 .vscode/
 scrolling_tests/
+.DS_Store

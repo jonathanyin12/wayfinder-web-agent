@@ -16,6 +16,7 @@ from agent.web_agent import WebAgent
 class TaskData(TypedDict):
     id: str
     web: str
+    web_name: str
     ques: str
 
 
@@ -52,7 +53,12 @@ async def main(max_concurrent_tasks: int, output_dir: str) -> None:
 
     # remove impossible tasks
     with open("eval/WebVoyagerImpossibleTasks.json", "r") as f:
-        impossible_tasks = set(json.load(f))
+        impossible_tasks_json = json.load(f)
+        impossible_tasks = set()
+        for web_name in impossible_tasks_json:
+            for task_id in impossible_tasks_json[web_name]:
+                impossible_tasks.add(task_id)
+
     tasks = [task for task in tasks if task["id"] not in impossible_tasks]
 
     # randomize the order of tasks
