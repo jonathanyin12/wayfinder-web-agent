@@ -172,13 +172,8 @@ TOOLS = [
             "description": "Declare that you have completed the task.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "final_response": {
-                        "type": "string",
-                        "description": "The final response/answer to the task. Include detailed information if the task involved gathering specific information (e.g. a recipe, a product description, summary of a page, etc.).",
-                    },
-                },
-                "required": ["final_response"],
+                "properties": {},
+                "required": [],
                 "additionalProperties": False,
             },
             "strict": True,
