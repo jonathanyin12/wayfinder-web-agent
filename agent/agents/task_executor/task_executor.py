@@ -80,9 +80,9 @@ class TaskExecutor:
                 self.screenshot_history,
                 iteration,
             )
-
+        final_response = await self._prepare_final_response()
         return (
-            action.args.get("final_response", ""),
+            final_response,
             self.screenshot_history,
             iteration,
         )
@@ -308,6 +308,28 @@ Output your verdict as a JSON object with the following fields:
                 ChatCompletionUserMessageParam(role="user", content=error_message)
             )
             print(f"Action failed: {error_message}")
+
+    async def _prepare_final_response(self) -> str:
+        """Prepare the final response"""
+
+        user_message = ChatCompletionUserMessageParam(
+            role="user",
+            content=f"""Write a final response to the task: {self.task}
+            
+Include detailed information gathered (e.g., product specifications, prices, availability, recipes, reviews, etc.) that fulfills the task.""",
+        )
+
+        response = await self.llm_client.make_call(
+            [
+                *self.message_history,
+                user_message,
+            ],
+            "gpt-4o",
+            json_format=False,
+        )
+        if not response.content:
+            raise ValueError("No response from LLM")
+        return response.content
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:

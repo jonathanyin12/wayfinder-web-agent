@@ -79,7 +79,7 @@ You are responsible for planning and delegating tasks to the web browsing assist
                 screenshot_history,
             )
 
-            formatted_result = f"Web browsing assistant's response: {result}\n\nEvaluator's feedback: {evaluation}"
+            formatted_result = f"Web browsing assistant's response: {result}\n\n---------------------\n\nEvaluator's feedback: {evaluation}"
             self.message_history.append(
                 ChatCompletionUserMessageParam(
                     role="user",
@@ -89,6 +89,21 @@ You are responsible for planning and delegating tasks to the web browsing assist
 
             print(formatted_result)
             iteration += iterations
+
+        if next_task == "objective complete":
+            self.message_history.append(
+                ChatCompletionAssistantMessageParam(
+                    role="assistant",
+                    content="The objective has been completed.",
+                )
+            )
+        else:
+            self.message_history.append(
+                ChatCompletionAssistantMessageParam(
+                    role="assistant",
+                    content="The objective has not been completed with the given number of iterations.",
+                )
+            )
 
         final_response = await self._prepare_final_response()
         return final_response, iteration, time.time() - start_time
@@ -226,11 +241,11 @@ Summarize what the web browsing assistant did according to the screenshots and d
 
         user_message = ChatCompletionUserMessageParam(
             role="user",
-            content="""Provide a final response about the completed web browsing task. Include:
-1. A summary of what happened
-2. (If applicable) Detailed information gathered during the task (e.g., product specifications, prices, availability, recipes, reviews, etc.)
+            content=f"""Provide a final response to the objective: {self.objective}
+            
+Include detailed information gathered (e.g., product specifications, prices, availability, recipes, reviews, etc.) that fulfills the objective.
 
-Make sure to include all relevant information that fulfills the original objective.""",
+If the objective is not completed, explain why not.""",
         )
 
         response = await self.llm_client.make_call(
