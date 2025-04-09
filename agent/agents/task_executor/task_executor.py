@@ -80,9 +80,9 @@ class TaskExecutor:
                 self.screenshot_history,
                 iteration,
             )
-        final_response = await self._prepare_final_response()
+        task_output = await self._prepare_task_output()
         return (
-            final_response,
+            task_output,
             self.screenshot_history,
             iteration,
         )
@@ -268,7 +268,7 @@ The first screenshot is the state of the page before the action, and the second 
 Output your verdict as a JSON object with the following fields:
 {{
     "reasoning": <reasoning about whether the action was completed successfully>,
-    "evaluation": <statement about the action's outcome, making sure to restate the action>,
+    "evaluation": <statement about the action's outcome, making sure to restate the action, with a brief explanation of why the action was completed or not>,
 }}"""
 
                 user_message = self.llm_client.create_user_message_with_images(
@@ -317,14 +317,20 @@ Output your verdict as a JSON object with the following fields:
             )
             print(f"Action failed: {error_message}")
 
-    async def _prepare_final_response(self) -> str:
-        """Prepare the final response"""
+    async def _prepare_task_output(self) -> str:
+        """Provide any information requested by the task."""
 
         user_message = ChatCompletionUserMessageParam(
             role="user",
-            content=f"""Write a final response to the task: {self.task}
+            content=f"""Determine if the task requires any information to be returned. If so, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
             
-Include detailed information gathered (e.g., product specifications, prices, availability, recipes, reviews, etc.) that fulfills the task.""",
+As a reminder, the task is: {self.task}
+
+Output your response in JSON format.
+{{
+    "reasoning": <reasoning about whether the task requires any information to be returned>,
+    "information": <Return the content requested by the task in natural language. If no information is requested, return an empty string>,
+}}""",
         )
 
         response = await self.llm_client.make_call(
@@ -333,11 +339,12 @@ Include detailed information gathered (e.g., product specifications, prices, ava
                 user_message,
             ],
             "gpt-4o",
-            json_format=False,
+            json_format=True,
         )
         if not response.content:
             raise ValueError("No response from LLM")
-        return response.content
+        response_json = json.loads(response.content)
+        return response_json["information"]
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:

@@ -37,23 +37,26 @@ class Orchestrator:
 
         self.max_iterations = 15
         self.model = "o1"
-        self.message_history: List[ChatCompletionMessageParam] = [
-            ChatCompletionSystemMessageParam(
-                role="system",
-                content=f"""You are a helpful manager that is tasked with overseeing the completion of the following objective: '{self.objective}'.
-
-You are working with a web browsing assistant, who will perform the actual actions and an evaluator, who will evaluate the results of the performance of the web browsing assistant.
-
-You are responsible for planning and delegating tasks to the web browsing assistant and adjusting the plan if necessary based on the evaluator's feedback.
-""",
-            )
-        ]
+        self.message_history: List[ChatCompletionMessageParam] = []
 
         self.plan = "No plan yet"
 
     async def run(self) -> Tuple[str, int, float]:
         start_time = time.time()
         iteration = 0
+
+        information_needed = await self._identify_information_needed()
+        system_prompt = f"""You are a helpful manager that is tasked with overseeing the completion of the following objective: '{self.objective}'."""
+        if information_needed:
+            system_prompt += f"\n\nHere is the information likely needed to complete the objective: {information_needed}"
+
+        self.message_history.append(
+            ChatCompletionSystemMessageParam(
+                role="system",
+                content=system_prompt,
+            )
+        )
+
         while iteration < self.max_iterations:
             next_task = await self._decide_next_task()
             if next_task == "objective complete":
@@ -72,14 +75,17 @@ You are responsible for planning and delegating tasks to the web browsing assist
                 self.browser,
                 self.output_dir,
             )
-            result, screenshot_history, iterations = await task_executor.run()
+            task_output, screenshot_history, iterations = await task_executor.run()
             evaluation = await self._evaluate_task_execution(
                 next_task,
-                result,
+                task_output,
                 screenshot_history,
             )
-
-            formatted_result = f"Web browsing assistant's response: {result}\n\n---------------------\n\nEvaluator's feedback: {evaluation}"
+            if task_output:
+                formatted_result = f"Task output:\n{task_output}\n\n---------------------\n\n{evaluation}"
+            else:
+                formatted_result = f"{evaluation}"
+            print(formatted_result)
             self.message_history.append(
                 ChatCompletionUserMessageParam(
                     role="user",
@@ -87,10 +93,9 @@ You are responsible for planning and delegating tasks to the web browsing assist
                 )
             )
 
-            print(formatted_result)
             iteration += iterations
 
-        if next_task == "objective complete":
+        if next_task.lower().strip() == "objective complete":
             self.message_history.append(
                 ChatCompletionAssistantMessageParam(
                     role="assistant",
@@ -101,11 +106,13 @@ You are responsible for planning and delegating tasks to the web browsing assist
             self.message_history.append(
                 ChatCompletionAssistantMessageParam(
                     role="assistant",
-                    content="The objective has not been completed with the given number of iterations.",
+                    content="The objective was not completed with the given number of iterations.",
                 )
             )
 
         final_response = await self._prepare_final_response()
+        print(f"Final response:\n{final_response}")
+        self.llm_client.print_token_usage()
         return final_response, iteration, time.time() - start_time
 
     async def _decide_next_task(self):
@@ -121,8 +128,8 @@ You are responsible for planning and delegating tasks to the web browsing assist
             pixels_below,
         )
         user_prompt = f"""TASK:
-1. Make a rough plan to complete the objective from the current state.
-- Consider the things that have already been done and what still needs to be done.
+1. Make a rough plan to complete the objective from the current state. Objective: {self.objective}
+- Consider the things that have already been done and what still needs to be done. Is there more information needed to complete the objective?
 - Update the previous plan if it is no longer valid (e.g. need to backtrack). Make sure to remove any steps that have already been completed.
 - It's okay to be unsure or less detailed about later steps.
 
@@ -137,7 +144,7 @@ Previous plan:
 - Provide all the context needed to complete the next step within the instructions. The web browsing assistant won't be able to see past messages, so make sure to include all the information it needs to complete the next step.
 
 
-If the objective is complete, just say "objective complete" for the next step.
+If the objective is complete, just say "objective complete" for the next step. Make sure you have all the information requested in the objective before saying "objective complete".
 
 
 Output your plan in JSON format.
@@ -194,58 +201,67 @@ Screenshot: shows the current visible portion of the page
         result: str,
         screenshot_history: List[str],
     ):
-        SYSTEM_PROMPT = """As an evaluator, your job is to evaluate a web browsing assistant's performance on a given task. You will be presented with three primary components to assist you in your role:
+        PROMPT = f"""As an evaluator, your job is to evaluate a web browsing assistant's performance on a given task.
 
-1. Web Task Instruction: This is a clear and specific directive provided in natural language, detailing the online activity to be carried out. These requirements may include conducting searches, verifying information, comparing prices, checking availability, or any other action relevant to the specified web service (such as Amazon, Apple, ArXiv, BBC News, Booking etc).
+TASK: {task}
 
-2. Result Screenshots: This is a visual representation of the screen showing the result or intermediate state of performing a web task. It serves as visual proof of the actions taken in response to the instruction, and may not represent everything the agent sees.
+TASK OUTPUT: {result}
 
-3. Result Response: This is a textual response obtained after the execution of the web task. It serves as textual result in response to the instruction.
+Screenshots are provided to help you evaluate the task output. This is a visual representation of the screen showing the result or intermediate state of performing a web task. It serves as visual proof of the actions taken in response to the instruction, and may not represent everything the agent sees.
 
+Guidelines:
 -- You DO NOT NEED to interact with web pages or perform actions such as booking flights or conducting searches on websites.
 -- You SHOULD NOT make assumptions based on information not presented in the screenshot when comparing it to the instructions. If you cannot find any information in the screenshot that matches the instruction, you can believe the information in the response.
 -- Your primary responsibility is to conduct a thorough assessment of the web task instruction against the outcome depicted in the screenshot and in the response, evaluating whether the actions taken align with the given instructions.
 -- NOTE that the instruction may involve more than one task, for example, locating the garage and summarizing the review. Failing to complete either task, such as not providing a summary, should be considered unsuccessful.
 -- NOTE that the screenshot is authentic, but the response provided by LLM is generated at the end of web browsing, and there may be discrepancies between the text and the screenshots.
 -- Note the difference: 1) Result response may contradict the screenshot, then the content of the screenshot prevails, 2) The content in the Result response is not mentioned on the screenshot, choose to believe the content.
--- If you are not sure whether you should believe the content in the response, you should choose unknown.
-
 
 Summarize what the web browsing assistant did according to the screenshots and determine whether the task was successfully accomplished. If the task was not completed successfully, explain why not.
-"""
 
-        USER_PROMPT = f"""TASK: {task}
-        Result Response: {result}"""
+Output your evaluation in JSON format.
+{{
+    "summary": <summary of what the web browsing assistant did>,
+    "reasoning": <reasoning about whether the task was completed successfully>,
+    "evaluation": <statement about the task's outcome, making sure to restate the task, with a brief explanation of why the task was completed or not>,
+}}"""
+
         user_message = self.llm_client.create_user_message_with_images(
-            USER_PROMPT, screenshot_history, "high"
+            PROMPT, screenshot_history, "high"
         )
 
         response = await self.llm_client.make_call(
-            [
-                ChatCompletionSystemMessageParam(
-                    role="system",
-                    content=SYSTEM_PROMPT,
-                ),
-                user_message,
-            ],
+            [user_message],
             "gpt-4o",
-            json_format=False,
+            json_format=True,
         )
         if not response.content:
             raise ValueError("No response from LLM")
 
-        return response.content
+        response_json = json.loads(response.content)
+        return response_json["evaluation"]
 
     async def _prepare_final_response(self) -> str:
         """Prepare the final response to relay to the user"""
 
         user_message = ChatCompletionUserMessageParam(
             role="user",
-            content=f"""Provide a final response to the objective: {self.objective}
-            
-Include detailed information gathered (e.g., product specifications, prices, availability, recipes, reviews, etc.) that fulfills the objective.
+            content="""TASK 1:            
+Provide a 1-2 sentence final response to the objective. If the objective was not completed, briefly explain why not.
 
-If the objective is not completed, explain why not.""",
+
+TASK 2:
+If the objective requires information to be returned, make sure to include all the information gathered. Otherwise, return an empty string for the information field.
+- Reference the message history to find the requested information. DO NOT MAKE UP ANY INFORMATION. 
+- If information requested for the task is not present in the message history, simply state what information is missing. 
+
+
+Output your response in JSON format with the following fields:
+{{
+    "response": <final response to the objective>,
+    "information": <detailed information gathered that fulfills the objective. If no information is needed, return an empty string>,
+}}
+""",
         )
 
         response = await self.llm_client.make_call(
@@ -254,9 +270,51 @@ If the objective is not completed, explain why not.""",
                 user_message,
             ],
             "gpt-4o",
-            json_format=False,
+            json_format=True,
         )
         if not response.content:
             raise ValueError("No response from LLM")
-        print(f"Final response: {response.content}")
-        return response.content
+
+        response_json = json.loads(response.content)
+
+        final_response = response_json["response"]
+        information = response_json["information"]
+        if information:
+            formatted_response = f"{final_response}\n\n{information}"
+        else:
+            formatted_response = final_response
+        return formatted_response
+
+    async def _identify_information_needed(self) -> str:
+        """Determine the requested information from the objective"""
+
+        user_message = ChatCompletionUserMessageParam(
+            role="user",
+            content=f"""Determine if the objective requires any information to be returned. If so, clearly outline what information is needed to complete the objective.
+            
+Objective: '{self.objective}'
+
+Output your response in JSON format with the following fields:
+{{
+    "reasoning": <reasoning about whether the objective requires any information to be returned>,
+    "information_needed": <boolean indicating whether information is needed to complete the objective>,
+    "information": <detailed natural language description of the information needed to complete the objective. If no information is needed, return an empty string>,
+}}""",
+        )
+
+        response = await self.llm_client.make_call(
+            [user_message],
+            "gpt-4o",
+            json_format=True,
+        )
+        if not response.content:
+            raise ValueError("No response from LLM")
+
+        response_json = json.loads(response.content)
+        if response_json["information_needed"]:
+            print(
+                f"Information needed to complete the objective:\n{response_json['information']}"
+            )
+        else:
+            print("No information needed to complete the objective")
+        return response_json["information"]
