@@ -46,6 +46,7 @@ class Orchestrator:
         iteration = 0
 
         information_needed = await self._identify_information_needed()
+        self.information_needed = information_needed
         system_prompt = f"""You are a helpful manager that is tasked with overseeing the completion of the following objective: '{self.objective}'."""
         if information_needed:
             system_prompt += f"\n\nHere is the information likely needed to complete the objective: {information_needed}\n\nBefore deeming the objective complete, make sure to have extracted all the information needed since the user will only be able to see the text in your final response."
@@ -58,7 +59,8 @@ class Orchestrator:
         )
 
         while iteration < self.max_iterations:
-            next_task = await self._decide_next_task()
+            progress, plan, next_task = await self._decide_next_task()
+            self.plan = plan
             if next_task == "objective complete":
                 break
             self.message_history.append(
@@ -67,13 +69,13 @@ class Orchestrator:
                     content=next_task,
                 )
             )
-
             task_executor = TaskExecutor(
                 self.objective,
                 next_task,
                 self.llm_client,
                 self.browser,
                 self.output_dir,
+                max_iterations=self.max_iterations - iteration,
             )
             task_output, screenshot_history, iterations = await task_executor.run()
             evaluation = await self._evaluate_task_execution(
@@ -82,7 +84,7 @@ class Orchestrator:
                 screenshot_history,
             )
             if task_output:
-                formatted_result = f"Task output:\n{task_output}\n\n---------------------\n\n{evaluation}"
+                formatted_result = f"Task output:\n{task_output}\n\n---------------------\n\nEvaluation:\n{evaluation}"
             else:
                 formatted_result = f"{evaluation}"
             print(formatted_result)
@@ -99,7 +101,7 @@ class Orchestrator:
             self.message_history.append(
                 ChatCompletionAssistantMessageParam(
                     role="assistant",
-                    content="The objective has been completed.",
+                    content=f"Progress: {progress}\n\nPlan: {plan}\n\nThe objective has been completed.",
                 )
             )
         else:
@@ -131,6 +133,9 @@ class Orchestrator:
 1. Give a progress summary
 - Briefly describe what has been done so far and what still needs to be done.
 - Has all the information requested in the objective been extracted and is present in the message history?
+
+Information needed:
+{self.information_needed if self.information_needed else "None"}
 
 
 2. Make a new plan to complete the objective from the current state.
@@ -188,12 +193,9 @@ Screenshot: shows the current visible portion of the page
         progress = response_json["progress"]
         plan = response_json["plan"]
         next_step = response_json["next_step"]
-        print(f"Progress: {progress}")
-        print(f"Plan: {plan}")
-        print(f"Next step: {next_step}")
-        self.plan = plan
+        print(f"Progress: {progress}\n\nPlan: {plan}\n\nNext step: {next_step}")
 
-        return next_step
+        return progress, plan, next_step
 
     async def _evaluate_task_execution(
         self,

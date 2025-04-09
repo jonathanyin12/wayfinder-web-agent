@@ -35,6 +35,7 @@ class TaskExecutor:
         llm_client: LLMClient,
         browser: AgentBrowser,
         output_dir: str,
+        max_iterations: int = 10,
     ):
         self.objective = objective
         self.task = task
@@ -42,7 +43,7 @@ class TaskExecutor:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = 10
+        self.max_iterations = min(max_iterations, 10)
         self.model = "o1"
         self.message_history: List[ChatCompletionMessageParam] = []
         self.screenshot_history: List[str] = []
@@ -322,12 +323,18 @@ Output your verdict as a JSON object with the following fields:
 
         user_message = ChatCompletionUserMessageParam(
             role="user",
-            content=f"""Determine if the task requires any information to be returned. If so, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
-            
+            content=f"""TASK 1:            
+Provide a 1-2 sentence final response to the task. If the task was not completed, briefly explain why not.
+
 As a reminder, the task is: {self.task}
+
+TASK 2:
+Determine if the task requires any information to be returned. If so, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
+            
 
 Output your response in JSON format.
 {{
+    "response": <final response to the task>,
     "reasoning": <reasoning about whether the task requires any information to be returned>,
     "information": <Return the content requested by the task in natural language. If no information is requested, return an empty string>,
 }}""",
@@ -344,7 +351,14 @@ Output your response in JSON format.
         if not response.content:
             raise ValueError("No response from LLM")
         response_json = json.loads(response.content)
-        return response_json["information"]
+
+        final_response = response_json["response"]
+        information = response_json["information"]
+        if information:
+            formatted_response = f"{final_response}\n\n{information}"
+        else:
+            formatted_response = final_response
+        return formatted_response
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
