@@ -118,7 +118,7 @@ class AgentBrowser:
     # Action execution
     # ------------------------------------------------------------------------
 
-    async def execute_action(self, action: AgentAction) -> Optional[str]:
+    async def execute_action(self, action: AgentAction) -> str:
         """
         Execute an agent action on the browser.
 
@@ -129,7 +129,7 @@ class AgentBrowser:
             A string representation of the action result
         """
 
-        action_response = None
+        action_response = ""
         if action.name == "end_task":
             pass
         elif action.name == "switch_tab":

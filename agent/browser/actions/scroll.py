@@ -57,9 +57,9 @@ Here is what you are looking for: {content_to_find}
 Guidelines:
 - It is possible that what you are looking for is not on the page.
 - If you found multiple possible matches, respond with the one that you feel is the most likely to be the one the user is looking for.
-- If you can't find the exact content, but there exists a similar matching element on the page, tell the user about it, but don't say that you found the content.
+- If you can't find the exact content, but there exists a similar matching content on the page, tell the user in your response. "found" should still be false in this case.
 
-In your response, don't mention what screenshot you found the content in since the page will be scrolled to the appropriate position.
+In your response, don't mention what screenshot you found the content in since the page will be automatically scrolled to the appropriate position.
 
 Respond with a JSON object with the following fields:
 {{

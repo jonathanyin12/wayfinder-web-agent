@@ -246,8 +246,8 @@ CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
             # Execute the action
             action_result_str = await self.browser.execute_action(action)
 
-            # If the browser tool didn't provide an explicit result string, get feedback from the LLM
-            if action_result_str is None:
+            # Provide feedback on all actions except extract
+            if action.name != "extract":
                 message = f"""Based on the two screenshots, evaluate whether the following action was completed successfully.
 
 Intended action: {action.description}
@@ -276,21 +276,22 @@ Output your verdict as a JSON object with the following fields:
                 response = await self.llm_client.make_call(
                     [user_message],
                     "gpt-4o",
-                    json_format=True,  # Ensure JSON format for easier parsing
+                    json_format=True,
                 )
 
                 if not response.content:
                     print("Warning: No feedback content received from LLM")
-                    action_result_str = f"Action '{action.description}' executed, but evaluation query failed."
+                    feedback = "Evaluation query failed."
                 else:
-                    try:
-                        response_json = json.loads(response.content)
-                        action_result_str = response_json["evaluation"]
-                    except (json.JSONDecodeError, KeyError) as e:
-                        print(
-                            f"Error parsing feedback response: {e}. Raw response: {response.content}"
-                        )
-                        action_result_str = f"Action '{action.description}' executed, but evaluation response parsing failed."
+                    response_json = json.loads(response.content)
+                    feedback = response_json["evaluation"]
+
+                if action_result_str:
+                    action_result_str = (
+                        f"Action output: {action_result_str}\n\nEvaluation: {feedback}"
+                    )
+                else:
+                    action_result_str = feedback
 
             # Append the final result/feedback to history
             self.message_history.append(
