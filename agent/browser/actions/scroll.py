@@ -96,10 +96,11 @@ Respond with a JSON object with the following fields:
 
 
 async def _get_vertical_position(
-    content_to_find: str, location: str, screenshot: str
+    content_to_find: str, location: str, screenshot: str, use_location: bool = False
 ) -> float:
     """Get the vertical position of the content on the page"""
-    prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the exact middle of the screenshot, and 1 means the content is at the bottom of the screenshot. If you can't find the content, make an educated guess based on the description of the location of the content.
+    if use_location:
+        prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the middle of the screenshot, and 1 means the content is at the bottom of the screenshot. If you can't find the content, make an educated guess based on the description of the location of the content.
 
 Here is the content you are looking for: {content_to_find}
 
@@ -107,7 +108,16 @@ Description of the location of the content: {location}
 
 Respond with a JSON object with the following field:
 {{
-    "vertical_position": <a float between 0 and 1.>,
+    "vertical_position": <a float between 0 and 1>,
+}}"""
+    else:
+        prompt = f"""You are a helpful assistant tasked with determining the vertical position of content on a screenshot. The vertical position of the content on the screenshot can be represented as a float between 0 and 1, where 0 means the content is at the top of the screenshot, 0.5 means the content is at the middle of the screenshot, and 1 means the content is at the bottom of the screenshot. If you can't find the content, set the vertical position to -1.
+
+Here is the content you are looking for: {content_to_find}
+
+Respond with a JSON object with the following field:
+{{
+    "vertical_position": <a float between 0 and 1, or -1 if you can't find the content.>,
 }}"""
 
     user_message = llm_client.create_user_message_with_images(
@@ -121,11 +131,13 @@ Respond with a JSON object with the following field:
 
     response_json = json.loads(response.content)
     vertical_position = float(response_json["vertical_position"])
-    if vertical_position < 0.0 or vertical_position > 1.0:
+    if vertical_position == -1:
         print(
-            f"Vertical position out of range {vertical_position}, falling back to 0.5 (center of the page)"
+            "vertical position is -1, getting vertical position from location, which may be inaccurate"
         )
-        return 0.5
+        vertical_position = await _get_vertical_position(
+            content_to_find, location, screenshot, use_location=True
+        )
     return vertical_position
 
 
