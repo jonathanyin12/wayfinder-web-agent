@@ -1,11 +1,12 @@
 import argparse
+import asyncio
 import base64
 import json
 import os
 import time
 from typing import Any
 
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 
 MODEL_PRICING = {
     "gpt-4o-mini": {
@@ -19,6 +20,18 @@ MODEL_PRICING = {
     "o1": {
         "prompt_tokens": 15 / 1000000,
         "completion_tokens": 60 / 1000000,
+    },
+    "gpt-4.1": {
+        "prompt_tokens": 2 / 1000000,
+        "completion_tokens": 8 / 1000000,
+    },
+    "o4-mini": {
+        "prompt_tokens": 1.1 / 1000000,
+        "completion_tokens": 4.4 / 1000000,
+    },
+    "o3": {
+        "prompt_tokens": 10 / 1000000,
+        "completion_tokens": 40 / 1000000,
     },
 }
 
@@ -56,7 +69,7 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
-def auto_eval(process_dir, openai_client, api_model, img_num):
+async def auto_eval(process_dir, openai_client, api_model, img_num):
     print(f"--------------------- {process_dir} ---------------------")
     cost = 0  # Initialize cost for this evaluation
 
@@ -99,11 +112,11 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
     while True:
         try:
             kwargs: dict[str, Any] = {"response_format": {"type": "json_object"}}
-            if api_model.startswith("gpt-4o"):
+            if api_model.startswith("gpt"):
                 kwargs["temperature"] = 0.0
             if api_model.startswith("o"):
                 kwargs["reasoning_effort"] = "high"
-            openai_response = openai_client.chat.completions.create(
+            openai_response = await openai_client.chat.completions.create(
                 model=api_model,
                 messages=messages,
                 seed=42,
@@ -133,6 +146,7 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
     response = openai_response.choices[0].message.content
 
     response = json.loads(response)
+    response["eval_cost"] = cost
     verdict = response["verdict"]
     reasoning = response["reasoning"]
 
@@ -147,15 +161,14 @@ def auto_eval(process_dir, openai_client, api_model, img_num):
     return verdict, reasoning, cost
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_dir", type=str, default="results")
-
     parser.add_argument("--api_model", default="o1", type=str, help="api model name")
     parser.add_argument("--max_attached_imgs", type=int, default=15)
     args = parser.parse_args()
 
-    client = AzureOpenAI(
+    client = AsyncAzureOpenAI(
         api_version="2025-01-01-preview",
         azure_endpoint="https://jonathan-research.openai.azure.com",
     )
@@ -177,10 +190,21 @@ def main():
         "Wolfram Alpha",
     ]
     total_cost = 0  # Initialize total cost tracker
+    # Create a semaphore to limit concurrent requests
+    semaphore = asyncio.Semaphore(20)
+
+    from tqdm.asyncio import tqdm_asyncio
+
+    async def process_task(file_dir, client, api_model, max_attached_imgs):
+        async with semaphore:
+            return await auto_eval(file_dir, client, api_model, max_attached_imgs)
 
     for web in webs:
         web_task_res = []
         web_cost = 0  # Track cost per website
+        tasks = []
+
+        # Collect all tasks that need to be run
         for idx in range(0, 46):
             file_dir = os.path.join(args.output_dir, web + "--" + str(idx))
             metadata_file = os.path.join(file_dir, "metadata.json")
@@ -190,14 +214,23 @@ def main():
 
                 # Skip if the auto evaluation result is already in the metadata
                 if "auto_eval" not in metadata:
-                    verdict, reasoning, cost = auto_eval(
+                    task = process_task(
                         file_dir, client, args.api_model, args.max_attached_imgs
                     )
-                    web_task_res.append(verdict)
-                    web_cost += cost
-                    total_cost += cost
-            else:
-                pass
+                    tasks.append((task, file_dir))
+
+        # Run all tasks concurrently
+        if tasks:
+            results = await tqdm_asyncio.gather(
+                *(task for task, _ in tasks), desc=f"Processing {web}"
+            )
+
+            # Process results
+            for (verdict, reasoning, cost), (_, file_dir) in zip(results, tasks):
+                web_task_res.append(verdict)
+                web_cost += cost
+                total_cost += cost
+
         if web_task_res:
             print(f"\n{web} results:")
             print(f"Total cost: ${web_cost:.4f}")
@@ -207,4 +240,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
