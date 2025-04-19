@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, List, Tuple
 
 from openai.types.chat.chat_completion_assistant_message_param import (
@@ -30,28 +31,27 @@ from ...llm import LLMClient
 class TaskExecutor:
     def __init__(
         self,
-        objective: str,
         task: str,
         llm_client: LLMClient,
         browser: AgentBrowser,
         output_dir: str,
-        max_iterations: int = 10,
+        max_iterations: int = 15,
     ):
-        self.objective = objective
         self.task = task
         self.llm_client = llm_client
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = min(max_iterations, 10)
-        self.model = "o1"
+        self.max_iterations = min(max_iterations, 15)
+        self.model = "gpt-4o"
         self.message_history: List[ChatCompletionMessageParam] = []
         self.screenshot_history: List[str] = []
 
         self.include_captcha_check = False
 
-    async def run(self) -> Tuple[str, List[str], int]:
+    async def run(self) -> Tuple[str, List[str], int, float]:
         print(f"Starting task: {self.task}")
+        start_time = time.time()
         iteration = 0
         while iteration < self.max_iterations:
             self.screenshot_history.append(self.browser.current_page.screenshot)
@@ -80,12 +80,14 @@ class TaskExecutor:
                 f"Failed to complete task within {self.max_iterations} iterations",
                 self.screenshot_history,
                 iteration,
+                time.time() - start_time,
             )
         task_output = await self._prepare_task_output()
         return (
             task_output,
             self.screenshot_history,
             iteration,
+            time.time() - start_time,
         )
 
     def _get_system_prompt(self) -> str:
@@ -106,11 +108,8 @@ Here are the possible actions you can take:
 Guidelines:
 - Always use the extract action if you need to extract specific information from the page (recipe, top comment, title, etc.), even if you can see the information on the page.
 - If you need to find a specific element on the page to interact with (e.g. a button, link, etc.), use the scroll_to_content action instead of the scroll action. Only use the scroll action if you need to view more of the page.
-- When searching via a search bar, use a more general keyword query if a more specific query is not working.
+- When performing a search via a search bar, use a more general query if the current query is not working.
 
-
-Here is an overview of the current page:
-{self.browser.current_page.page_overview}
 """
 
     async def _choose_next_action(self) -> AgentAction:
@@ -127,7 +126,6 @@ Here is an overview of the current page:
 
         # Get action choice from primary model
         response_json = await self._get_action_choice(user_message)
-        print(f"Action choice:\n{json.dumps(response_json, indent=2)}")
 
         # Convert to a tool call
         tool_call = await self._convert_action_choice_to_tool_call(response_json)
@@ -143,11 +141,6 @@ Here is an overview of the current page:
             args=args,
             tool_call=tool_call,
         )
-
-        # user_message = self.llm_client.create_user_message_with_images(
-        #     "", images, detail="high"
-        # )
-        # self.message_history.append(user_message)
 
         return action
 
@@ -172,10 +165,16 @@ Here is an overview of the current page:
             raise ValueError("No response content received from LLM")
 
         response_json = json.loads(response.content)
+        progress = response_json["progress"]
+        reasoning = response_json["reasoning"]
+        action_description = response_json["action_description"]
+        formatted_response = f"Progress: {progress}\n\nReasoning: {reasoning}\n\nAction: {action_description}"
+        print(f"Action choice:\n{formatted_response}")
+
         self.message_history.append(
             ChatCompletionAssistantMessageParam(
                 role="assistant",
-                content=response.content,
+                content=formatted_response,
             )
         )
         return response_json
@@ -184,9 +183,17 @@ Here is an overview of the current page:
         self, action_choice: Dict[str, Any]
     ) -> ChatCompletionMessageToolCall:
         """Create a tool call from an action choice"""
+        action_name = action_choice["action_name"]
+        action_description = action_choice["action_description"]
+        kwargs = action_choice["kwargs"]
+
+        progress = action_choice["progress"]
+        reasoning = action_choice["reasoning"]
+
         user_message = ChatCompletionUserMessageParam(
             role="user",
-            content=f"Perform the following action:\n{json.dumps(action_choice, indent=2)}",
+            content=f"""Perform the following action:\n{action_description}\nAction name: {action_name}\nAction kwargs: {kwargs}\n\nHere is the context for why you should perform this action:
+            Progress: {progress}\n\nReasoning: {reasoning}""",
         )
         tool_call_message = await self.llm_client.make_call(
             [user_message],
@@ -207,19 +214,20 @@ Here is an overview of the current page:
         page = self.browser.current_page
         pixels_above, pixels_below = await page.get_pixels_above_below()
         page_position = get_formatted_page_position(pixels_above, pixels_below)
+        page_overview = page.page_overview
         interactable_elements = get_formatted_interactable_elements(
             pixels_above, pixels_below, page.elements
         )
         tabs = await get_formatted_tabs(self.browser)
         return f"""TASK:
-1. Reason about whether you have completed the task.
-- Consider the actions you have already taken and the progress you have made.
-- Don't interpret the task too narrowly.
+1. Summarize everything you have done so far and what you still need to do.
+- Is the objective complete?
+- Has all the information requested in the objective been extracted and is present in the message history?
+
 
 2. Reason about what action to take next.
 - Consider the elements you can currently see and interact with on the page.
-- Use the scroll action if you need to find something that is not currently visible.
-- Don't repeatedly try actions that aren't working. Find an alternative strategy.
+- Consider what actions you have already tried. Don't repeat actions that aren't working. Find an alternative strategy.
 - If the task is complete, respond with the action "end_task".
 
 
@@ -241,6 +249,9 @@ the current visible portion of the page with bounding boxes drawn around interac
 
 PAGE POSITION:
 {page_position}
+
+PAGE OVERVIEW:
+{page_overview}
 
 CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
 {interactable_elements}

@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-from agent.agents.orchestrator.orchestrator import Orchestrator
+from agent.agents.task_executor.task_executor import TaskExecutor
 from agent.browser.core.browser import AgentBrowser
 from agent.llm import LLMClient
 
@@ -26,10 +26,16 @@ class WebAgent:
 
     async def run(self):
         await self.browser.launch()
-        orchestrator = Orchestrator(
+        task_executor = TaskExecutor(
             self.objective, self.llm_client, self.browser, self.output_dir
         )
-        result, iterations, execution_time = await orchestrator.run()
+        (
+            result,
+            screenshot_history,
+            iterations,
+            execution_time,
+        ) = await task_executor.run()
+        print(result)
         self.save_run(result, iterations, execution_time)
 
         await self.browser.terminate()
