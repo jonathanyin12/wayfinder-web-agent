@@ -26,27 +26,38 @@ class WebAgent:
 
     async def run(self):
         await self.browser.launch()
+        model = "gpt-4.1"
         task_executor = TaskExecutor(
-            self.objective, self.llm_client, self.browser, self.output_dir
+            task=self.objective,
+            llm_client=self.llm_client,
+            browser=self.browser,
+            output_dir=self.output_dir,
+            model=model,
         )
         (
             result,
+            message_history,
             screenshot_history,
             iterations,
             execution_time,
         ) = await task_executor.run()
         print(result)
-        self.save_run(result, iterations, execution_time)
+        self.save_run(result, message_history, model, iterations, execution_time)
 
         await self.browser.terminate()
 
     def save_run(
         self,
         final_response,
+        message_history,
+        model,
         iterations,
         execution_time,
     ):
         token_usage = self.llm_client.get_token_usage()
+        prettified_message_history = self.llm_client.format_message_history(
+            message_history
+        )
         with open(os.path.join(self.output_dir, "metadata.json"), "w") as f:
             json.dump(
                 {
@@ -56,6 +67,8 @@ class WebAgent:
                     "final_response": final_response,
                     "execution_time": execution_time,
                     "token_usage": token_usage,
+                    "primary_model": model,
+                    "message_history": prettified_message_history,
                 },
                 f,
                 indent=4,

@@ -17,34 +17,50 @@ async def take_screenshot_full_page(page: Page, save_path: Optional[str] = None)
     # Get page dimensions
     page_height = await page.evaluate("document.body.scrollHeight")
 
+    # Handle PDF pages (which often report height as 0)
+    if page_height == 0:
+        # Check if this is a PDF page
+        is_pdf = await page.evaluate(
+            "document.querySelector('embed[type=\"application/pdf\"]') !== null || document.querySelector('object[type=\"application/pdf\"]') !== null"
+        )
+        if is_pdf:
+            print("PDF detected, using default PDF capture approach")
+            # For PDFs, we'll use Playwright's built-in full_page option
+            screenshot = await page.screenshot(full_page=False)
+            if save_path:
+                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(save_path, "wb") as f:
+                    f.write(screenshot)
+            return base64.b64encode(screenshot).decode("utf-8")
+
     # Save original scroll position
     original_position = await page.evaluate("window.scrollY")
 
     # Scroll through the page to ensure all lazy-loaded content is loaded
-    await page.evaluate("""
-        async () => {
-            // Save original scroll position
-            const originalPosition = window.scrollY;
-            
-            // Scroll through the entire page
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 100;
-                const timer = setInterval(() => {
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-                    
-                    if(totalHeight >= document.body.scrollHeight){
-                        clearInterval(timer);
-                        resolve();
-                    }
-                }, 10);
-            });
-            
-            // Restore original scroll position
-            window.scrollTo(0, originalPosition);
-        }
-    """)
+    # await page.evaluate("""
+    #     async () => {
+    #         // Save original scroll position
+    #         const originalPosition = window.scrollY;
+
+    #         // Scroll through the entire page
+    #         await new Promise((resolve) => {
+    #             let totalHeight = 0;
+    #             const distance = 100;
+    #             const timer = setInterval(() => {
+    #                 window.scrollBy(0, distance);
+    #                 totalHeight += distance;
+
+    #                 if(totalHeight >= document.body.scrollHeight){
+    #                     clearInterval(timer);
+    #                     resolve();
+    #                 }
+    #             }, 10);
+    #         });
+
+    #         // Restore original scroll position
+    #         window.scrollTo(0, originalPosition);
+    #     }
+    # """)
 
     # Short delay to ensure everything is settled
     await page.wait_for_timeout(500)
@@ -93,12 +109,11 @@ async def take_screenshot(
         try:
             return await take_screenshot_full_page(page, save_path)
         except Exception:
-            # Fall back to the scrolling method if anything goes wrong
-            return await take_screenshot_full_page(page, save_path)
+            pass
 
     if save_path:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-    screenshot = await page.screenshot(full_page=full_page, path=save_path)
+    screenshot = await page.screenshot(full_page=False, path=save_path)
     return base64.b64encode(screenshot).decode("utf-8")
 
 

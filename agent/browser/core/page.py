@@ -116,9 +116,12 @@ class AgentBrowserPage:
 
         # Unpack the results from the tasks
         if len(results) > 1:
-            page_overview, (screenshot, bounding_box_screenshot, elements) = results
-            self.page_overview = page_overview
-            # print(self.page_overview)
+            (
+                (page_summary, detailed_breakdown),
+                (screenshot, bounding_box_screenshot, elements),
+            ) = results
+            self.page_summary = page_summary
+            self.page_breakdown = detailed_breakdown
         else:
             screenshot, bounding_box_screenshot, elements = results[0]
 

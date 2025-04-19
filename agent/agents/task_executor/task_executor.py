@@ -16,10 +16,11 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 
-from agent.agents.utils.prompt_formatting import (
-    get_formatted_interactable_elements,
-    get_formatted_page_position,
-    get_formatted_tabs,
+from agent.agents.task_executor.prompts import (
+    get_action_choice_prompt,
+    get_action_feedback_prompt,
+    get_system_prompt,
+    get_task_output_prompt,
 )
 from agent.browser.core.tools import TOOLS
 from agent.models import AgentAction
@@ -35,6 +36,7 @@ class TaskExecutor:
         llm_client: LLMClient,
         browser: AgentBrowser,
         output_dir: str,
+        model: str = "gpt-4.1",
         max_iterations: int = 15,
     ):
         self.task = task
@@ -43,13 +45,18 @@ class TaskExecutor:
         self.output_dir = output_dir
 
         self.max_iterations = min(max_iterations, 15)
-        self.model = "gpt-4o"
-        self.message_history: List[ChatCompletionMessageParam] = []
-        self.screenshot_history: List[str] = []
+        self.model = model
+        self.system_prompt = get_system_prompt(task)
+        self.message_history: List[ChatCompletionMessageParam] = [
+            ChatCompletionSystemMessageParam(role="system", content=self.system_prompt)
+        ]
 
+        self.screenshot_history: List[str] = []
         self.include_captcha_check = False
 
-    async def run(self) -> Tuple[str, List[str], int, float]:
+    async def run(
+        self,
+    ) -> Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]:
         print(f"Starting task: {self.task}")
         start_time = time.time()
         iteration = 0
@@ -67,7 +74,14 @@ class TaskExecutor:
                 break
 
             # Execute the action
-            await self._execute_action(action)
+            success, action_result = await self._execute_action(action)
+
+            if success:
+                feedback = await self._give_action_feedback(action, action_result)
+                self.message_history.append(
+                    ChatCompletionUserMessageParam(role="user", content=feedback)
+                )
+                print(f"Action result: {feedback}")
 
             self.llm_client.print_token_usage()
 
@@ -78,6 +92,7 @@ class TaskExecutor:
         if iteration >= self.max_iterations:
             return (
                 f"Failed to complete task within {self.max_iterations} iterations",
+                self.message_history,
                 self.screenshot_history,
                 iteration,
                 time.time() - start_time,
@@ -85,47 +100,19 @@ class TaskExecutor:
         task_output = await self._prepare_task_output()
         return (
             task_output,
+            self.message_history,
             self.screenshot_history,
             iteration,
             time.time() - start_time,
         )
-
-    def _get_system_prompt(self) -> str:
-        return f"""You are a web browsing assistant helping to complete the following task: "{self.task}"
-
-Here are the possible actions you can take:
-- click_element (element_id: int): click on an element on the page
-- type_text (element_id: int, text: str): type text into a text box on the page and optionally submit the text
-- scroll (direction: up | down, amount: float = 0.75): manually scroll the page in the given direction by the given amount
-- scroll_to_content (content_to_find: str): automatically scroll to specific content on the page. Use this if you need to find something that is not currently visible e.g. a button that is not visible. Provide as much context/detail as possible about what you are looking for.
-- extract (information_to_extract: str): Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for e.g. "recipe and ingredients", "first paragraph", "top comment" etc.
-- navigate (direction: back | forward): go back to the previous page or go forward to the next page
-- go_to_url (url: str): go to a specific url
-- switch_tab (tab_index: int): switch to a different tab
-- end_task: declare that you have completed the task
-
-
-Guidelines:
-- Always use the extract action if you need to extract specific information from the page (recipe, top comment, title, etc.), even if you can see the information on the page.
-- If you need to find a specific element on the page to interact with (e.g. a button, link, etc.), use the scroll_to_content action instead of the scroll action. Only use the scroll action if you need to view more of the page.
-- When performing a search via a search bar, use a more general query if the current query is not working.
-
-"""
 
     async def _choose_next_action(self) -> AgentAction:
         """Choose the next action to take
 
         Note: the benefit of not using o1 to choose the tool is that we get to output other metadata in the response, such as the action description and reasoning.
         """
-        # Get the action prompt and prepare the user message with image
-        action_prompt = await self._get_action_prompt()
-        images = [self.browser.current_page.bounding_box_screenshot]
-        user_message = self.llm_client.create_user_message_with_images(
-            action_prompt, images, detail="high"
-        )
-
         # Get action choice from primary model
-        response_json = await self._get_action_choice(user_message)
+        response_json = await self._get_action_choice()
 
         # Convert to a tool call
         tool_call = await self._convert_action_choice_to_tool_call(response_json)
@@ -144,16 +131,18 @@ Guidelines:
 
         return action
 
-    async def _get_action_choice(
-        self, user_message: ChatCompletionMessageParam
-    ) -> Dict[str, Any]:
+    async def _get_action_choice(self) -> Dict[str, Any]:
         """Get action recommendation from the primary LLM"""
-        system_message = ChatCompletionSystemMessageParam(
-            role="system", content=self._get_system_prompt()
+        # Get the action prompt and prepare the user message with image
+        action_choice_prompt = await get_action_choice_prompt(self.browser)
+        print(action_choice_prompt)
+        images = [self.browser.current_page.bounding_box_screenshot]
+        user_message = self.llm_client.create_user_message_with_images(
+            action_choice_prompt, images, detail="high"
         )
+
         response = await self.llm_client.make_call(
             [
-                system_message,
                 *self.message_history,
                 user_message,
             ],
@@ -170,6 +159,7 @@ Guidelines:
         action_description = response_json["action_description"]
         formatted_response = f"Progress: {progress}\n\nReasoning: {reasoning}\n\nAction: {action_description}"
         print(f"Action choice:\n{formatted_response}")
+        print(f"Action kwargs: {response_json['kwargs']}")
 
         self.message_history.append(
             ChatCompletionAssistantMessageParam(
@@ -204,151 +194,66 @@ Guidelines:
             raise ValueError("No tool calls received from LLM")
 
         tool_call = tool_call_message.tool_calls[0]
+        print(tool_call)
         return tool_call
-
-    async def _get_action_prompt(
-        self,
-    ) -> str:
-        """Returns the prompt template for planning the next action"""
-
-        page = self.browser.current_page
-        pixels_above, pixels_below = await page.get_pixels_above_below()
-        page_position = get_formatted_page_position(pixels_above, pixels_below)
-        page_overview = page.page_overview
-        interactable_elements = get_formatted_interactable_elements(
-            pixels_above, pixels_below, page.elements
-        )
-        tabs = await get_formatted_tabs(self.browser)
-        return f"""TASK:
-1. Summarize everything you have done so far and what you still need to do.
-- Is the objective complete?
-- Has all the information requested in the objective been extracted and is present in the message history?
-
-
-2. Reason about what action to take next.
-- Consider the elements you can currently see and interact with on the page.
-- Consider what actions you have already tried. Don't repeat actions that aren't working. Find an alternative strategy.
-- If the task is complete, respond with the action "end_task".
-
-
-Finally, respond with a JSON object with the following fields:
-{{
-    "progress": <summary of what you have done so far and what you still need to do>,
-    "reasoning": <reasoning for choosing this action>,
-    "action_description": <one sentence description of the action you will perform>,
-    "action_name": <name of the action to take>,
-    "kwargs": <kwargs for the action>,
-}}
-
-
-OPEN BROWSER TABS:
-{tabs}
-
-SCREENSHOT: 
-the current visible portion of the page with bounding boxes drawn around interactable elements. The element IDs are the numbers in top-left of boxes.
-
-PAGE POSITION:
-{page_position}
-
-PAGE OVERVIEW:
-{page_overview}
-
-CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
-{interactable_elements}
-"""
 
     async def _execute_action(self, action: AgentAction):
         """Execute an action, get feedback if necessary, and update message history."""
-        action_result_str = None
         try:
-            assert action.tool_call is not None
-            # Execute the action
-            action_result_str = await self.browser.execute_action(action)
-
-            # Provide feedback on all actions except extract
-            if action.name != "extract":
-                message = f"""Based on the two screenshots, evaluate whether the following action was completed successfully.
-
-Intended action: {action.description}
-
-Action performed: {action.name} {f"(on {action.element.get('description', '')})" if action.element else ""}
-
-The first screenshot is the state of the page before the action, and the second screenshot is the state of the page after the action. Consider what UX changes are expected for the action.
-- If no visible change occured, consider why e.g. perhaps the action was selecting on option that was already selected.
-- Make sure the intended action was actually completed. 
-
-Output your verdict as a JSON object with the following fields:
-{{
-    "reasoning": <reasoning about whether the action was completed successfully>,
-    "evaluation": <statement about the action's outcome, making sure to restate the action, with a brief explanation of why the action was completed or not>,
-}}"""
-
-                user_message = self.llm_client.create_user_message_with_images(
-                    message,
-                    [
-                        self.browser.current_page.previous_screenshot,
-                        self.browser.current_page.screenshot,
-                    ],
-                    detail="high",
-                )
-
-                response = await self.llm_client.make_call(
-                    [user_message],
-                    "gpt-4o",
-                    json_format=True,
-                )
-
-                if not response.content:
-                    print("Warning: No feedback content received from LLM")
-                    feedback = "Evaluation query failed."
-                else:
-                    response_json = json.loads(response.content)
-                    feedback = response_json["evaluation"]
-
-                if action_result_str:
-                    action_result_str = (
-                        f"Action output: {action_result_str}\n\nEvaluation: {feedback}"
-                    )
-                else:
-                    action_result_str = feedback
-
-            # Append the final result/feedback to history
-            self.message_history.append(
-                ChatCompletionUserMessageParam(role="user", content=action_result_str)
-            )
-            print(f"Action result: {action_result_str}")
-
+            action_result = await self.browser.execute_action(action)
+            return True, action_result
         except Exception as e:
-            print(f"Error executing action '{action.description}': {e}")
+            error_message = f"Error executing action '{action.description}': {e}"
+            print(error_message)
             # Update page state after error
             await self.browser.update_page_state()
             # Add error message to history
-            error_message = f"Error executing action '{action.description}': {e}"
             self.message_history.append(
                 ChatCompletionUserMessageParam(role="user", content=error_message)
             )
-            print(f"Action failed: {error_message}")
+            return False, error_message
+
+    async def _give_action_feedback(
+        self, action: AgentAction, action_result: str
+    ) -> str:
+        if action.name != "extract":
+            action_feedback_prompt = get_action_feedback_prompt(action)
+            user_message = self.llm_client.create_user_message_with_images(
+                action_feedback_prompt,
+                [
+                    self.browser.current_page.previous_screenshot,
+                    self.browser.current_page.screenshot,
+                ],
+                detail="high",
+            )
+            response = await self.llm_client.make_call(
+                [user_message],
+                "gpt-4.1",
+                json_format=True,
+            )
+
+            if not response.content:
+                print("Warning: No feedback content received from LLM")
+                feedback = "Evaluation query failed."
+            else:
+                response_json = json.loads(response.content)
+                feedback = response_json["evaluation"]
+
+        if action_result:
+            action_result = (
+                f"Action output: {action_result}\n\nAction Evaluation:\n{feedback}"
+            )
+        else:
+            action_result = f"Action Evaluation:\n{feedback}"
+
+        return feedback
 
     async def _prepare_task_output(self) -> str:
         """Provide any information requested by the task."""
 
         user_message = ChatCompletionUserMessageParam(
             role="user",
-            content=f"""TASK 1:            
-Provide a 1-2 sentence final response to the task. If the task was not completed, briefly explain why not.
-
-As a reminder, the task is: {self.task}
-
-TASK 2:
-Determine if the task requires any information to be returned. If so, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
-            
-
-Output your response in JSON format.
-{{
-    "response": <final response to the task>,
-    "reasoning": <reasoning about whether the task requires any information to be returned>,
-    "information": <Return the content requested by the task in natural language. If no information is requested, return an empty string>,
-}}""",
+            content=get_task_output_prompt(self.task),
         )
 
         response = await self.llm_client.make_call(

@@ -5,6 +5,7 @@ Annotation actions for labeling and identifying interactive elements on web page
 import asyncio
 import base64
 import io
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -321,11 +322,10 @@ Consider the context of the page when describing the element. For instance, if t
     return response.content
 
 
-async def get_page_overview(page: Page, full_page_screenshot: str) -> str:
+async def get_page_overview(page: Page, full_page_screenshot: str) -> Tuple[str, str]:
     """
     Get a brief overview of the page.
     """
-
     # Convert base64 screenshot to PIL Image
     image_data = base64.b64decode(full_page_screenshot)
     image = Image.open(io.BytesIO(image_data))
@@ -367,12 +367,18 @@ Page Title: {page_title}
 Page URL: {page.url}
 
 The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page.
-"""
+
+Output your response in JSON format.
+{{
+    "summary": <Answer to task 1>,
+    "detailed_breakdown": <Answer to task 2 in markdown format>,
+}}"""
 
     user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
-    response = await llm_client.make_call([user_message], "gpt-4o", json_format=False)
+    response = await llm_client.make_call([user_message], "gpt-4.1", json_format=True)
 
     if not response.content:
-        return "No response from the LLM"
+        raise ValueError("No response from the LLM")
 
-    return response.content
+    response_json = json.loads(response.content)
+    return response_json["summary"], response_json["detailed_breakdown"]
