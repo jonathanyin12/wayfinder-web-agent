@@ -32,7 +32,7 @@ def get_system_prompt(task: str) -> str:
 
 Here are the possible actions you can take:
 - click_element (element_id: int): click on an element on the page
-- type_text (element_id: int, text: str): type text into a text box on the page. This will automatically focus on the text box and clear the text box before typing, so you don't need to click on the text box first or clear it.
+- type_text (element_id: int, text: str): click on a text box and type text into it. This will automatically clear the text box before typing.
 - scroll (direction: up | down, amount: float = 0.75): manually scroll the page in the given direction by the given amount
 - navigate (direction: back | forward): go back to the previous page or go forward to the next page
 - go_to_url (url: str): go to a specific url
@@ -60,7 +60,7 @@ class TaskExecutor:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = min(max_iterations, 15)
+        self.max_iterations = min(max_iterations, 25)
         self.model = model
         self.message_history: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
@@ -76,6 +76,8 @@ class TaskExecutor:
 
         self.task_completed = False
         self.final_response = None
+
+        self.include_prev_screenshots = True
 
         self.iteration = 0
 
@@ -95,12 +97,12 @@ class TaskExecutor:
             print(f"Iteration {self.iteration}")
             self.iteration += 1
             self.llm_client.print_token_usage()
-            self.llm_client.print_message_history(
-                cast(
-                    List[ChatCompletionMessageParam | Dict[str, Any]],
-                    self.message_history,
-                )
-            )
+            # self.llm_client.print_message_history(
+            #     cast(
+            #         List[ChatCompletionMessageParam | Dict[str, Any]],
+            #         self.message_history,
+            #     )
+            # )
 
             # Check for captcha first before planning the next action
             if self.include_captcha_check and await self.browser.check_for_captcha():
@@ -140,9 +142,14 @@ class TaskExecutor:
                     self.final_response = final_response
                 else:
                     # Add the feedback to history
-                    evaluation_message = ChatCompletionUserMessageParam(
-                        role="user",
-                        content=f"Task was deemed incomplete.\n\nFeedback:\n{feedback}",
+                    evaluation_message = (
+                        self.llm_client.create_user_message_with_images(
+                            f"Task was deemed incomplete.\n\nFeedback:\n{feedback}",
+                            [self.browser.current_page.screenshot]
+                            if self.include_prev_screenshots
+                            else [],
+                            detail="high",
+                        )
                     )
                     self.message_history.append(evaluation_message)
             else:
@@ -187,15 +194,16 @@ class TaskExecutor:
         print(f"Starting task: {self.task}")
         self.start_time = time.time()
         self.iteration = 0
-        self.screenshot_history.append(self.browser.current_page.screenshot)
+        screenshot = self.browser.current_page.screenshot
+        self.screenshot_history.append(screenshot)
 
         # Use GoalManager to determine the next goal
         self.goal = await self.goal_manager.determine_next_goal(self.message_history)
-        self.goal_screenshot_history = [self.browser.current_page.screenshot]
+        self.goal_screenshot_history = [screenshot]
 
         goal_message = self.llm_client.create_user_message_with_images(
             f"NEXT GOAL:\n{self.goal}",
-            [self.browser.current_page.screenshot],
+            [screenshot] if self.include_prev_screenshots else [],
             detail="high",
         )
         self.message_history.append(goal_message)
@@ -259,7 +267,7 @@ class TaskExecutor:
 
         user_message = self.llm_client.create_user_message_with_images(
             message_content,
-            [current_screenshot],
+            [current_screenshot] if self.include_prev_screenshots else [],
             detail="high",
         )
         self.message_history.append(user_message)

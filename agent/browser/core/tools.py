@@ -22,7 +22,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "type_text",
-            "description": "Type text into a text box on the page. This will automatically focus on the text box and clear the text box before typing, so you don't need to click on the text box first or clear it.",
+            "description": "Click on a text box and type text into it. This will automatically clear the text box before typing.",
             "parameters": {
                 "type": "object",
                 "properties": {
