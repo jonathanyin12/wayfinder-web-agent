@@ -1,10 +1,6 @@
 import json
-from typing import List, Tuple, cast
+from typing import List
 
-from openai.types.chat import ChatCompletionMessageToolCallParam
-from openai.types.chat.chat_completion_assistant_message_param import (
-    ChatCompletionAssistantMessageParam,
-)
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 
 from agent.agents.utils.prompt_formatting import (

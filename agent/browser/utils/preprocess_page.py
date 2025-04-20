@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from playwright.async_api import Page
 
 from agent.browser.utils.dom_utils.load_js_file import load_js_file
@@ -46,8 +46,9 @@ async def preprocess_page(
     )
     await clear_bounding_boxes(page)
     elements = await get_element_descriptions(
-        page, element_simplified_htmls, output_dir
+        page, element_simplified_htmls, screenshot_base64, output_dir
     )
+
     # elements = {
     #     element_id: {
     #         "simplified_html": element_simplified_htmls[element_id],
@@ -229,7 +230,7 @@ async def clear_bounding_boxes(page: Page) -> None:
 
 
 async def get_element_descriptions(
-    page, element_simplified_htmls, output_dir
+    page, element_simplified_htmls, screenshot_base64, output_dir
 ) -> Dict[int, Dict[str, str]]:
     """
     Get descriptions for all annotated elements on the page in parallel.
@@ -242,18 +243,13 @@ async def get_element_descriptions(
     tasks = []
 
     for element_id, simplified_html in element_simplified_htmls.items():
-        await draw_bounding_box_around_element(page, element_id)
-        page_screenshot_base64 = await take_screenshot(
-            page,
-        )
-        await clear_bounding_boxes(page)
-
         # Create the task
         task = get_element_description(
             page,
             element_id,
             simplified_html,
-            page_screenshot_base64,
+            screenshot_base64,
+            output_dir,
         )
         tasks.append((element_id, task))
 
@@ -275,20 +271,43 @@ async def get_element_description(
     page: Page,
     element_id: str,
     simplified_html: str,
-    page_screenshot: str,
-    save_path: Optional[str] = None,
+    screenshot_base64: str,
+    output_dir: str,
 ) -> str:
     """
     Get a description for a single element on the page.
     """
-    # element_screenshot = await take_element_screenshot(
-    #     page,
-    #     element_id,
-    #     save_path=save_path,
-    # )
 
-    # if not element_screenshot:
-    #     raise ValueError("No element screenshot")
+    # Get the element bounding box coordinates
+    selector = f'[data-gwa-id="gwa-element-{element_id}"]'
+    element_handle = await page.query_selector(selector)
+    if not element_handle:
+        return "Element not found"
+
+    bounding_box = await element_handle.bounding_box()
+    if not bounding_box:
+        return "Element has no bounding box"
+
+    # Manually draw the bounding box on the screenshot using PIL
+    image_data = base64.b64decode(screenshot_base64)
+    image = Image.open(io.BytesIO(image_data))
+    draw = ImageDraw.Draw(image)
+    # Add a small buffer around the bounding box for better visibility
+    buffer = 10
+    draw.rectangle(
+        [
+            max(0, bounding_box["x"] - buffer),
+            max(0, bounding_box["y"] - buffer),
+            bounding_box["x"] + bounding_box["width"] + buffer,
+            bounding_box["y"] + bounding_box["height"] + buffer,
+        ],
+        outline="red",
+        width=5,
+    )
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+
+    page_screenshot_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     prompt = f"""Task: Describe the function of the UI element in the screenshot.
 
@@ -308,11 +327,11 @@ Output your response in JSON format:
 """
 
     user_message = llm_client.create_user_message_with_images(
-        prompt, [page_screenshot], "high"
+        prompt, [page_screenshot_base64], "high"
     )
     response = await llm_client.make_call(
         [user_message],
-        "gpt-4.1",
+        "gpt-4.1-mini",
         timeout=10,
         json_format=True,
     )
@@ -380,7 +399,9 @@ Output your response in JSON format.
 }}"""
 
     user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
-    response = await llm_client.make_call([user_message], "gpt-4.1", json_format=True)
+    response = await llm_client.make_call(
+        [user_message], "gpt-4.1-mini", json_format=True
+    )
 
     if not response.content:
         raise ValueError("No response from the LLM")

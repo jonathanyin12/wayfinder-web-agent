@@ -23,6 +23,10 @@ PRICING = {
         "prompt_tokens": 2.5 / 1000000,
         "completion_tokens": 10 / 1000000,
     },
+    "gpt-4.1-mini": {
+        "prompt_tokens": 0.4 / 1000000,
+        "completion_tokens": 1.6 / 1000000,
+    },
     "gpt-4.1": {
         "prompt_tokens": 2 / 1000000,
         "completion_tokens": 8 / 1000000,
@@ -59,7 +63,7 @@ class LLMClient:
         model: str,
         tools: Optional[List[Dict[str, Any]]] = None,
         attempt: int = 0,
-        timeout: int = 120,
+        timeout: int = 60,
         json_format: bool = True,
         reasoning_effort: Optional[Literal["low", "medium", "high"]] = "high",
     ) -> ChatCompletionMessage:
@@ -155,7 +159,11 @@ class LLMClient:
             Union[
                 ChatCompletionContentPartTextParam, ChatCompletionContentPartImageParam
             ]
-        ] = [ChatCompletionContentPartTextParam(type="text", text=text_content)]
+        ] = []
+        if text_content:
+            content.append(
+                ChatCompletionContentPartTextParam(type="text", text=text_content)
+            )
         if detail is None:
             details: List[Literal["auto", "low", "high"]] = ["high"] * len(images)
         else:

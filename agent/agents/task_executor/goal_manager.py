@@ -119,8 +119,8 @@ PAGE DETAILS:
 
 
 TASK: 
-1. Describe the current state of the task. Outline what has been done so far and what remains to be done.
-2. Determine what the immediate next goal should be. This typically should be a single action to take.
+1. Describe the current state of the task. Outline what has been done so far and what remains to be done. If any mistakes were made and backtracking is needed, explain what went wrong and what needs to be done to correct it.
+2. Determine what the immediate next goal should be. This typically should be a single action to take. The goal must be possible to complete on the current page. 
 
 If the task is fully complete, suggest submitting for evaluation.
 
