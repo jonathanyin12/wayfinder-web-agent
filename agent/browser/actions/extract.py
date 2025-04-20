@@ -19,7 +19,7 @@ Here is the page content in markdown format:
 """
     response = await llm_client.make_call(
         [{"role": "user", "content": prompt}],
-        "gpt-4o",
+        "gpt-4.1",
         json_format=False,
     )
     return response.content

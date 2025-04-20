@@ -103,7 +103,9 @@ class LLMClient:
         except Exception as e:
             if attempt >= self.max_retries - 1:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
-            print(f"Attempt {attempt + 1} failed with error: {str(e)}")
+            print(
+                f"Attempt {attempt + 1} failed with error: {str(e)}. Model: {model}, Timeout: {timeout}"
+            )
             return await self.make_call(
                 messages, model, tools, attempt + 1, timeout, json_format
             )

@@ -70,7 +70,7 @@ Respond with a JSON object with the following fields:
 }}"""
 
     user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
-    response = await llm_client.make_call([user_message], "gpt-4o")
+    response = await llm_client.make_call([user_message], "gpt-4.1")
 
     if not response.content:
         # Return a default response indicating failure
@@ -123,7 +123,7 @@ Respond with a JSON object with the following field:
     user_message = llm_client.create_user_message_with_images(
         prompt, [screenshot], "high"
     )
-    response = await llm_client.make_call([user_message], "o1")
+    response = await llm_client.make_call([user_message], "o4-mini")
 
     if not response.content:
         print("Get vertical position tool failed to return a response")
