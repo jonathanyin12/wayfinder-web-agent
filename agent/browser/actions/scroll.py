@@ -151,9 +151,7 @@ async def scroll(page: Page, direction: str, amount: float = 0.75):
 
 
 @browser_action
-async def scroll_to_content(
-    page: Page, content_to_find: str, full_page_screenshot: str
-):
+async def find(page: Page, content_to_find: str, full_page_screenshot: str):
     """Scroll to the content on the page"""
     image_data = base64.b64decode(full_page_screenshot)
     image = Image.open(io.BytesIO(image_data))

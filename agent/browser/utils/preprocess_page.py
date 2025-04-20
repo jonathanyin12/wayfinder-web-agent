@@ -45,16 +45,16 @@ async def preprocess_page(
         save_path=f"{output_dir}/bounding_box_screenshots/{timestamp}.png",
     )
     await clear_bounding_boxes(page)
-    # elements = await get_element_descriptions(
-    #     page, element_simplified_htmls, output_dir
-    # )
-    elements = {
-        element_id: {
-            "simplified_html": element_simplified_htmls[element_id],
-            "description": element_simplified_htmls[element_id],
-        }
-        for element_id in element_simplified_htmls
-    }
+    elements = await get_element_descriptions(
+        page, element_simplified_htmls, output_dir
+    )
+    # elements = {
+    #     element_id: {
+    #         "simplified_html": element_simplified_htmls[element_id],
+    #         "description": element_simplified_htmls[element_id],
+    #     }
+    #     for element_id in element_simplified_htmls
+    # }
 
     return screenshot_base64, bounding_box_screenshot_base64, elements
 
@@ -281,45 +281,50 @@ async def get_element_description(
     """
     Get a description for a single element on the page.
     """
-    element_screenshot = await take_element_screenshot(
-        page,
-        element_id,
-        save_path=save_path,
-    )
+    # element_screenshot = await take_element_screenshot(
+    #     page,
+    #     element_id,
+    #     save_path=save_path,
+    # )
 
-    if not element_screenshot:
-        raise ValueError("No element screenshot")
+    # if not element_screenshot:
+    #     raise ValueError("No element screenshot")
 
-    prompt = f"""Describe the element and it's purpose in the screenshot:
+    prompt = f"""Task: Describe the function of the UI element in the screenshot.
 
-The first screenshot is the entire page with the element highlighted with a red bounding box.
-The second screenshot is the element in question.
+The first screenshot is the entire page with the element outlined with a red bounding box.
 
 The element has the following HTML:
 {simplified_html}
 
 
-Output a very brief description of the element and it's purpose. Provide additional context about the element if necessary e.g. if there are multiple elements that look similar, describe the differences.
+Provide additional context about the element if necessary e.g. if there are multiple identical elements, say what the element is associated with.
 
-Example outputs:
-'Add to Cart' button for the 13 inch MacBook Pro
-Empty search bar at the top of the page
-Link to the privacy policy
-Button to select the color 'blue'.
 
-Consider the context of the page when describing the element. For instance, if the element is a selector and has an outline around it, it is most likely selected.
+Output your response in JSON format:
+{{
+  "description": "string | a few words describing the element and its function. Include any disambiguating information if there are multiple elements that look similar.",
+}}
 """
 
     user_message = llm_client.create_user_message_with_images(
-        prompt, [page_screenshot, element_screenshot], "low"
+        prompt, [page_screenshot], "high"
     )
     response = await llm_client.make_call(
-        [user_message], "gpt-4o", timeout=10, json_format=False
+        [user_message],
+        "gpt-4.1",
+        timeout=10,
+        json_format=True,
     )
+
     if not response.content:
         return simplified_html
 
-    return response.content
+    json_response = json.loads(response.content)
+
+    output = f"{json_response['description']} "
+
+    return output
 
 
 async def get_page_overview(page: Page, full_page_screenshot: str) -> Tuple[str, str]:

@@ -6,9 +6,6 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ChatCompletionAssistantMessageParam,
 )
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
-from openai.types.chat.chat_completion_message_tool_call import (
-    ChatCompletionMessageToolCall,
-)
 from openai.types.chat.chat_completion_system_message_param import (
     ChatCompletionSystemMessageParam,
 )
@@ -17,8 +14,10 @@ from openai.types.chat.chat_completion_user_message_param import (
 )
 
 from agent.agents.task_executor.prompts import (
+    evaluate_goal_completion_prompt,
     get_action_choice_prompt,
-    get_action_feedback_prompt,
+    get_evaluator_system_prompt,
+    get_next_goal_prompt,
     get_system_prompt,
     get_task_output_prompt,
 )
@@ -54,13 +53,29 @@ class TaskExecutor:
         self.screenshot_history: List[str] = []
         self.include_captcha_check = False
 
+        self.goal = "No goal yet"
+        self.feedback = ""
+        self.goal_screenshot_history: List[str] = []
+
+        self.task_completed = False
+
     async def run(
         self,
     ) -> Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]:
         print(f"Starting task: {self.task}")
         start_time = time.time()
         iteration = 0
-        while iteration < self.max_iterations:
+
+        await self._determine_next_goal()
+        goal_message = self.llm_client.create_user_message_with_images(
+            f"NEXT GOAL:\n{self.goal}",
+            [self.browser.current_page.screenshot],
+            detail="high",
+        )
+        self.message_history.append(goal_message)
+        self.goal_screenshot_history.append(self.browser.current_page.screenshot)
+
+        while iteration < self.max_iterations and not self.task_completed:
             self.screenshot_history.append(self.browser.current_page.screenshot)
             # Check for captcha first before planning the next action
             if self.include_captcha_check and await self.browser.check_for_captcha():
@@ -70,21 +85,80 @@ class TaskExecutor:
             # Get the next action
             action = await self._choose_next_action()
 
-            if action.name == "end_task":
-                break
+            if action.name == "submit_for_evaluation":
+                final_response = await self._prepare_task_output()
+                success, reasoning = await self._task_evaluation(final_response)
+                if success:
+                    self.task_completed = True
+                    return (
+                        final_response,
+                        self.message_history,
+                        self.screenshot_history,
+                        iteration,
+                        time.time() - start_time,
+                    )
+                else:
+                    self.message_history.append(
+                        ChatCompletionUserMessageParam(
+                            role="user",
+                            content=f"Task was deemed incomplete.\n\nReasoning:\n{reasoning}",
+                        )
+                    )
+                    continue
 
             # Execute the action
             success, action_result = await self._execute_action(action)
 
-            if success:
-                feedback = await self._give_action_feedback(action, action_result)
-                self.message_history.append(
-                    ChatCompletionUserMessageParam(role="user", content=feedback)
+            self.goal_screenshot_history.append(self.browser.current_page.screenshot)
+            completed, feedback = await self._evaluate_goal_completion(action_result)
+
+            if completed:
+                # Create a temporary message to pass in the action result and feedback
+                temporary_message = f"GOAL COMPLETED:\n{feedback}"
+                if action_result:
+                    temporary_message = (
+                        f"ACTION RESULT:\n{action_result}\n\n{temporary_message}"
+                    )
+                user_message = self.llm_client.create_user_message_with_images(
+                    temporary_message,
+                    [self.browser.current_page.screenshot],
+                    detail="high",
                 )
-                print(f"Action result: {feedback}")
+                self.message_history.append(user_message)
+
+                await self._determine_next_goal()
+                self.message_history.pop()  # pop the temporary message
+
+                message = f"GOAL COMPLETED:\n{feedback}\n\nNEXT GOAL:\n{self.goal}"
+                if action_result:
+                    message = f"ACTION RESULT:\n{action_result}\n\n{message}"
+
+                user_message = self.llm_client.create_user_message_with_images(
+                    message,
+                    [self.browser.current_page.screenshot],
+                    detail="high",
+                )
+                self.message_history.append(user_message)
+                self.feedback = ""
+                self.goal_screenshot_history.append(
+                    self.browser.current_page.screenshot
+                )
+            else:
+                message = f"FEEDBACK:\n{feedback}"
+                if action_result:
+                    message = f"ACTION RESULT:\n{action_result}\n\n{message}"
+
+                user_message = self.llm_client.create_user_message_with_images(
+                    message,
+                    [self.browser.current_page.screenshot],
+                    detail="high",
+                )
+                self.message_history.append(user_message)
+
+                self.feedback = feedback
 
             self.llm_client.print_token_usage()
-
+            self.llm_client.print_message_history(self.message_history)
             iteration += 1
 
         self.llm_client.print_token_usage()
@@ -106,39 +180,11 @@ class TaskExecutor:
             time.time() - start_time,
         )
 
-    async def _choose_next_action(self) -> AgentAction:
-        """Choose the next action to take
+    async def _determine_next_goal(self):
+        next_goal_prompt = await get_next_goal_prompt(self.browser)
 
-        Note: the benefit of not using o1 to choose the tool is that we get to output other metadata in the response, such as the action description and reasoning.
-        """
-        # Get action choice from primary model
-        response_json = await self._get_action_choice()
-
-        # Convert to a tool call
-        tool_call = await self._convert_action_choice_to_tool_call(response_json)
-        args = json.loads(tool_call.function.arguments)
-
-        action = AgentAction(
-            name=tool_call.function.name,
-            element=self.browser.current_page.elements.get(
-                args.get("element_id", -1), {}
-            ),
-            description=response_json["action_description"],
-            reasoning=response_json["reasoning"],
-            args=args,
-            tool_call=tool_call,
-        )
-
-        return action
-
-    async def _get_action_choice(self) -> Dict[str, Any]:
-        """Get action recommendation from the primary LLM"""
-        # Get the action prompt and prepare the user message with image
-        action_choice_prompt = await get_action_choice_prompt(self.browser)
-        print(action_choice_prompt)
-        images = [self.browser.current_page.bounding_box_screenshot]
         user_message = self.llm_client.create_user_message_with_images(
-            action_choice_prompt, images, detail="high"
+            next_goal_prompt, [self.browser.current_page.screenshot], detail="high"
         )
 
         response = await self.llm_client.make_call(
@@ -154,48 +200,93 @@ class TaskExecutor:
             raise ValueError("No response content received from LLM")
 
         response_json = json.loads(response.content)
-        progress = response_json["progress"]
-        reasoning = response_json["reasoning"]
-        action_description = response_json["action_description"]
-        formatted_response = f"Progress: {progress}\n\nReasoning: {reasoning}\n\nAction: {action_description}"
-        print(f"Action choice:\n{formatted_response}")
-        print(f"Action kwargs: {response_json['kwargs']}")
+        self.goal = response_json["next_goal"]
+        print(f"New goal set:\n{json.dumps(response_json, indent=4)}")
+        self.goal_screenshot_history = []
 
-        self.message_history.append(
-            ChatCompletionAssistantMessageParam(
-                role="assistant",
-                content=formatted_response,
-            )
+    async def _evaluate_goal_completion(self, action_result: str) -> Tuple[bool, str]:
+        """Evaluate if the goal has been completed"""
+
+        next_goal_prompt = await evaluate_goal_completion_prompt(
+            self.browser, self.goal, action_result
         )
-        return response_json
+        user_message = self.llm_client.create_user_message_with_images(
+            next_goal_prompt, self.goal_screenshot_history, detail="high"
+        )
 
-    async def _convert_action_choice_to_tool_call(
-        self, action_choice: Dict[str, Any]
-    ) -> ChatCompletionMessageToolCall:
-        """Create a tool call from an action choice"""
-        action_name = action_choice["action_name"]
-        action_description = action_choice["action_description"]
-        kwargs = action_choice["kwargs"]
+        response = await self.llm_client.make_call(
+            [
+                *self.message_history,
+                user_message,
+            ],
+            self.model,
+            json_format=True,
+        )
 
-        progress = action_choice["progress"]
-        reasoning = action_choice["reasoning"]
+        if not response.content:
+            raise ValueError("No response content received from LLM")
 
-        user_message = ChatCompletionUserMessageParam(
-            role="user",
-            content=f"""Perform the following action:\n{action_description}\nAction name: {action_name}\nAction kwargs: {kwargs}\n\nHere is the context for why you should perform this action:
-            Progress: {progress}\n\nReasoning: {reasoning}""",
+        response_json = json.loads(response.content)
+        completed = response_json["completed"]
+        if completed:
+            feedback = response_json["feedback"]
+        else:
+            feedback = (
+                response_json["previous_action_evaluation"]
+                + "\n\n"
+                + response_json["feedback"]
+            )
+
+        print(f"Goal Evaluation:\n{json.dumps(response_json, indent=4)}")
+
+        return completed, feedback
+
+    async def _choose_next_action(self) -> AgentAction:
+        """Choose the next action to take
+
+        Note: the benefit of not using o1 to choose the tool is that we get to output other metadata in the response, such as the action description and reasoning.
+        """
+        # Get action choice from primary model
+        action_choice_prompt = await get_action_choice_prompt(
+            self.browser, self.goal, self.feedback
+        )
+        images = [self.browser.current_page.bounding_box_screenshot]
+        user_message = self.llm_client.create_user_message_with_images(
+            action_choice_prompt, images, detail="high"
         )
         tool_call_message = await self.llm_client.make_call(
-            [user_message],
-            "gpt-4o-mini",
+            [
+                *self.message_history,
+                user_message,
+            ],
+            self.model,
             tools=TOOLS,
         )
         if not tool_call_message.tool_calls:
             raise ValueError("No tool calls received from LLM")
 
         tool_call = tool_call_message.tool_calls[0]
+
+        args = json.loads(tool_call.function.arguments)
+
+        action = AgentAction(
+            name=tool_call.function.name,
+            element=self.browser.current_page.elements.get(
+                args.get("element_id", -1), {}
+            ),
+            args=args,
+            tool_call=tool_call,
+        )
+
+        self.message_history.append(
+            ChatCompletionAssistantMessageParam(
+                role="assistant",
+                content=str(action),
+            )
+        )
         print(tool_call)
-        return tool_call
+
+        return action
 
     async def _execute_action(self, action: AgentAction):
         """Execute an action, get feedback if necessary, and update message history."""
@@ -212,41 +303,6 @@ class TaskExecutor:
                 ChatCompletionUserMessageParam(role="user", content=error_message)
             )
             return False, error_message
-
-    async def _give_action_feedback(
-        self, action: AgentAction, action_result: str
-    ) -> str:
-        if action.name != "extract":
-            action_feedback_prompt = get_action_feedback_prompt(action)
-            user_message = self.llm_client.create_user_message_with_images(
-                action_feedback_prompt,
-                [
-                    self.browser.current_page.previous_screenshot,
-                    self.browser.current_page.screenshot,
-                ],
-                detail="high",
-            )
-            response = await self.llm_client.make_call(
-                [user_message],
-                "gpt-4.1",
-                json_format=True,
-            )
-
-            if not response.content:
-                print("Warning: No feedback content received from LLM")
-                feedback = "Evaluation query failed."
-            else:
-                response_json = json.loads(response.content)
-                feedback = response_json["evaluation"]
-
-        if action_result:
-            action_result = (
-                f"Action output: {action_result}\n\nAction Evaluation:\n{feedback}"
-            )
-        else:
-            action_result = f"Action Evaluation:\n{feedback}"
-
-        return feedback
 
     async def _prepare_task_output(self) -> str:
         """Provide any information requested by the task."""
@@ -275,6 +331,33 @@ class TaskExecutor:
         else:
             formatted_response = final_response
         return formatted_response
+
+    async def _task_evaluation(self, final_response: str) -> Tuple[bool, str]:
+        """Evaluate the task"""
+        evaluator_system_prompt = await get_evaluator_system_prompt()
+
+        user_message = self.llm_client.create_user_message_with_images(
+            f"TASK: {self.task}\nResult Response: {final_response}",
+            self.screenshot_history,
+            detail="high",
+        )
+        response = await self.llm_client.make_call(
+            [
+                ChatCompletionSystemMessageParam(
+                    role="system", content=evaluator_system_prompt
+                ),
+                user_message,
+            ],
+            "o4-mini",
+            json_format=True,
+        )
+        if not response.content:
+            raise ValueError("No response from LLM")
+        response_json = json.loads(response.content)
+        verdict = response_json["verdict"]
+        success = verdict == "success"
+        feedback = response_json["feedback"]
+        return success, feedback
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
