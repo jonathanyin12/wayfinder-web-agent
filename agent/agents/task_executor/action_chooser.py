@@ -48,8 +48,13 @@ CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
 {interactable_elements}
 
 
-TASK: Choose the next action that helps you towards the current goal: {goal}
+TASK: Choose the next action that helps you towards the current goal.
 
+Goal: {goal}
+
+Guidelines:
+- DO NOT REPEATEDLY TRY THE SAME ACTION IF IT IS NOT WORKING. Try an alternative strategy.
+- Consider the feedback from previous actions if they failed.
 
 Rules:
 - Always use the extract action if you need to extract specific information from the page (recipe, top comment, title, etc.), even if you can see the information on the page.
@@ -57,7 +62,6 @@ Rules:
 - When performing a search via a search bar, use a more general query if the current query is not working.
 - For date inputs, type the desired date instead of using the date picker.
 - If there is a dropdown menu, select an option before proceeding.
-
 """
 
 

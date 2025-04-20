@@ -263,7 +263,36 @@ class TaskExecutor:
             self.goal_screenshot_history = [current_screenshot]
         else:
             message_content = f"{message_content}FEEDBACK:\n{feedback}"
-            self.goal_screenshot_history.append(current_screenshot)
+            (
+                should_update_goal,
+                reasoning,
+            ) = await self.goal_manager.evaluate_goal_validity(
+                [
+                    *self.message_history,
+                    self.llm_client.create_user_message_with_images(
+                        message_content,
+                        [current_screenshot],
+                        detail="high",
+                    ),
+                ],
+                self.goal,
+                self.goal_screenshot_history,
+            )
+            if should_update_goal:
+                self.goal = await self.goal_manager.determine_next_goal(
+                    [
+                        *self.message_history,
+                        self.llm_client.create_user_message_with_images(
+                            message_content,
+                            [current_screenshot],
+                            detail="high",
+                        ),
+                    ]
+                )
+                message_content = f"{message_content}\n\nUPDATED GOAL:\n{reasoning}\n\nNEXT GOAL:\n{self.goal}"
+                self.goal_screenshot_history = [current_screenshot]
+            else:
+                self.goal_screenshot_history.append(current_screenshot)
 
         user_message = self.llm_client.create_user_message_with_images(
             message_content,

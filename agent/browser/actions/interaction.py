@@ -33,14 +33,14 @@ async def click_element(page: Page, element_id: str):
     try:
         # First try to find and click the element in the main frame
         if await page.locator(selector).count() > 0:
-            await page.hover(selector)
+            await page.hover(selector, timeout=10000)
             await page.click(selector, timeout=10000)
             return
 
         # If not found in main frame, look for it in all frames
         for frame in page.frames:
             if await frame.locator(selector).count() > 0:
-                await frame.hover(selector)
+                await frame.hover(selector, timeout=10000)
                 await frame.click(selector, timeout=10000)
                 return
 

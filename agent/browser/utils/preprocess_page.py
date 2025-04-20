@@ -6,6 +6,7 @@ import asyncio
 import base64
 import io
 import json
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -45,17 +46,22 @@ async def preprocess_page(
         save_path=f"{output_dir}/bounding_box_screenshots/{timestamp}.png",
     )
     await clear_bounding_boxes(page)
-    elements = await get_element_descriptions(
-        page, element_simplified_htmls, screenshot_base64, output_dir
-    )
+    # start_time = time.time()
+    # elements = await get_element_descriptions(
+    #     page, element_simplified_htmls, screenshot_base64, output_dir
+    # )
+    # end_time = time.time()
+    # print(
+    #     f"Time taken to get {len(elements)} element descriptions: {end_time - start_time} seconds"
+    # )
 
-    # elements = {
-    #     element_id: {
-    #         "simplified_html": element_simplified_htmls[element_id],
-    #         "description": element_simplified_htmls[element_id],
-    #     }
-    #     for element_id in element_simplified_htmls
-    # }
+    elements = {
+        element_id: {
+            "simplified_html": element_simplified_htmls[element_id],
+            # "description": element_simplified_htmls[element_id],
+        }
+        for element_id in element_simplified_htmls
+    }
 
     return screenshot_base64, bounding_box_screenshot_base64, elements
 
@@ -203,17 +209,6 @@ async def draw_bounding_boxes(page: Page, indices: List[int]) -> int:
     return await page.evaluate(draw_bounding_boxes_js, indices)
 
 
-async def draw_bounding_box_around_element(page: Page, element_id: int) -> None:
-    """
-    Draw a bounding box around the element with the specified index.
-
-    Args:
-        page: The Playwright page
-        element_id: The unique GWA ID of the element to annotate
-    """
-    await draw_bounding_boxes(page, [element_id])
-
-
 async def clear_bounding_boxes(page: Page) -> None:
     """
     Clear any bounding boxes from the page.
@@ -239,12 +234,26 @@ async def get_element_descriptions(
         A dictionary mapping element IDs to their descriptions and simplified HTML
     """
 
-    # Process all elements in parallel
+    # Process all elements in parallel with a semaphore to limit concurrent calls
     tasks = []
+    # Limit to 20 concurrent calls
+    semaphore = asyncio.Semaphore(20)
+
+    async def get_element_description_with_semaphore(
+        page, element_id, simplified_html, screenshot_base64, output_dir
+    ):
+        async with semaphore:
+            return await get_element_description(
+                page,
+                element_id,
+                simplified_html,
+                screenshot_base64,
+                output_dir,
+            )
 
     for element_id, simplified_html in element_simplified_htmls.items():
-        # Create the task
-        task = get_element_description(
+        # Create the task with semaphore control
+        task = get_element_description_with_semaphore(
             page,
             element_id,
             simplified_html,
@@ -253,7 +262,7 @@ async def get_element_descriptions(
         )
         tasks.append((element_id, task))
 
-    # Execute all tasks concurrently
+    # Execute all tasks concurrently with semaphore limiting to 20 at a time
     results = await asyncio.gather(*[task for _, task in tasks])
 
     # Map results to element IDs
@@ -332,7 +341,7 @@ Output your response in JSON format:
     response = await llm_client.make_call(
         [user_message],
         "gpt-4.1-mini",
-        timeout=10,
+        timeout=30,
         json_format=True,
     )
 

@@ -92,6 +92,38 @@ class GoalManager:
 
         return completed, feedback
 
+    async def evaluate_goal_validity(
+        self,
+        message_history: List[ChatCompletionMessageParam],
+        goal: str,
+        goal_screenshot_history: List[str],
+    ) -> Tuple[bool, str]:
+        eval_prompt = await evaluate_goal_validity_prompt(self.browser, goal)
+        user_message = self.llm_client.create_user_message_with_images(
+            eval_prompt, goal_screenshot_history, detail="high"
+        )
+
+        response = await self.llm_client.make_call(
+            [
+                *message_history,
+                user_message,
+            ],
+            self.model,
+            json_format=True,
+        )
+
+        if not response.content:
+            raise ValueError(
+                "No response content received from LLM in evaluate_goal_validity"
+            )
+
+        response_json = json.loads(response.content)
+        should_update_goal = response_json["should_update_goal"]
+        reasoning = response_json["reasoning"]
+        print(f"Goal Validity Evaluation:\n{json.dumps(response_json, indent=4)}")
+
+        return should_update_goal, reasoning
+
 
 async def get_next_goal_prompt(browser: AgentBrowser) -> str:
     page = browser.current_page
@@ -116,6 +148,9 @@ PAGE DETAILS:
 - Detailed breakdown:
 {page_breakdown}
 
+
+CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
+{interactable_elements}
 
 
 TASK: 
@@ -168,11 +203,13 @@ PAGE DETAILS:
 {page_breakdown}
 
 
+CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
+{interactable_elements}
 
 
 TASK: 
-1. Evaluate the outcome of the previous action. If a mistake was made, explain why and what needs to be done to correct it.
-2. Evaluate if the goal has been completed and provide feedback on the goal's completion. 
+1. Evaluate the outcome of the previous action. If something unintended happened, explain what went wrong and what should be done to correct it. 
+2. Evaluate if the goal has been completed and provide feedback on the goal's completion. If you are stuck on completing the goal, brainstorm alternative strategies to complete the goal.
 
 Goal: {goal}
 
@@ -188,5 +225,59 @@ Output your response in JSON format.
     "previous_action_evaluation": <evaluation of the previous action>,
     "completed": <boolean indicating if the goal has been completed>,
     "feedback": <feedback>,
+}}
+"""
+
+
+async def evaluate_goal_validity_prompt(browser: AgentBrowser, goal: str) -> str:
+    page = browser.current_page
+    pixels_above, pixels_below = await page.get_pixels_above_below()
+    page_position = get_formatted_page_position(pixels_above, pixels_below)
+    page_summary = page.page_summary
+    page_breakdown = page.page_breakdown
+    interactable_elements = get_formatted_interactable_elements(
+        pixels_above, pixels_below, page.elements
+    )
+    tabs = await get_formatted_tabs(browser)
+    return f"""OPEN BROWSER TABS:
+{tabs}
+
+PAGE DETAILS:
+{page_position}
+
+- Summary:
+{page_summary}
+
+
+- Detailed breakdown:
+{page_breakdown}
+
+
+CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
+{interactable_elements}
+
+
+TASK: 
+Determine if the current goal is still a good goal. Here are some examples of when the goal should be updated:
+- If the goal is no longer relevant to the current page
+- If the state change makes the current goal irrelevant, impossible, or suboptimal (e.g., an item goes out of stock, a required form field appears only after clicking submit)
+- If a new error or notification appears that requires immediate attention (e.g., session timeout, captcha verification)
+- If the website structure has changed significantly from what was expected (e.g., redirected to a different page)
+- If a more efficient path to accomplish the overall task becomes available (e.g., a direct link appears)
+- If prerequisites for the current goal need to be completed first (e.g., login required before proceeding)
+- If the current goal was based on incorrect assumptions about the website's functionality
+- If external factors have changed (e.g., price increases, availability changes)
+- If the goal is too vague and needs to be made more specific based on the current page context
+
+
+Current goal: {goal}
+
+The screenshots capture the state of the page through time while the goal was being completed.
+
+
+Output your response in JSON format.
+{{
+    "reasoning": <reasoning on why the goal should be updated or not>,
+    "should_update_goal": <boolean indicating if the goal should be updated>,
 }}
 """

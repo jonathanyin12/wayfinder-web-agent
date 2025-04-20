@@ -35,7 +35,7 @@ Output a JSON object with the following format:
 class TaskEvaluator:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
-        self.evaluator_model = "o4-mini"
+        self.evaluator_model = "o1"
 
     async def evaluate_task(
         self, task: str, final_response: str, screenshot_history: List[str]
@@ -54,6 +54,7 @@ class TaskEvaluator:
             ],
             self.evaluator_model,
             json_format=True,
+            timeout=240,
         )
         if not response.content:
             raise ValueError("No response from LLM in evaluate_task")
