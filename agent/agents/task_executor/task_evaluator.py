@@ -1,0 +1,78 @@
+import json
+from typing import List, Tuple
+
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_system_message_param import (
+    ChatCompletionSystemMessageParam,
+)
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
+
+from agent.llm import LLMClient
+
+
+async def get_evaluator_system_prompt() -> str:
+    return """As an evaluator, you will be presented with three primary components to assist you in your role:
+
+1. Web Task Instruction: This is a clear and specific directive provided in natural language, detailing the online activity to be carried out. These requirements may include conducting searches, verifying information, comparing prices, checking availability, or any other action relevant to the specified web service (such as Amazon, Apple, ArXiv, BBC News, Booking etc).
+
+2. Result Screenshots: This is a visual representation of the screen showing the result or intermediate state of performing a web task. It serves as visual proof of the actions taken in response to the instruction, and may not represent everything the agent sees.
+
+3. Result Response: This is a textual response obtained after the execution of the web task. It serves as textual result in response to the instruction.
+
+-- You DO NOT NEED to interact with web pages or perform actions such as booking flights or conducting searches on websites.
+-- You SHOULD NOT make assumptions based on information not presented in the screenshot when comparing it to the instructions. If you cannot find any information in the screenshot that matches the instruction, you can believe the information in the response.
+-- Your primary responsibility is to conduct a thorough assessment of the web task instruction against the outcome depicted in the screenshot and in the response, evaluating whether the actions taken align with the given instructions.
+-- NOTE that the instruction may involve more than one task, for example, locating the garage and summarizing the review. Failing to complete either task, such as not providing a summary, should be considered unsuccessful.
+-- NOTE that the screenshot is authentic, but the response provided by LLM is generated at the end of web browsing, and there may be discrepancies between the text and the screenshots.
+-- Note the difference: 1) Result response may contradict the screenshot, then the content of the screenshot prevails, 2) The content in the Result response is not mentioned on the screenshot, choose to believe the content.
+-- If you are not sure whether you should believe the content in the response, you should choose unknown.
+
+Provide a verdict on whether the task has been successfully accomplished, either as 'success', 'failed', or 'unknown'. If the task was not accomplished successfully, provide a feedback to the agent on what went wrong or what needs to be done to complete the task.
+
+Output a JSON object with the following format:
+{
+    "verdict": <success | failed | unknown>
+    "feedback": <feedback>
+}"""
+
+
+class TaskEvaluator:
+    def __init__(self, llm_client: LLMClient):
+        self.llm_client = llm_client
+        # Note: Evaluation uses a specific, potentially smaller model
+        self.evaluator_model = "o4-mini"
+
+    async def evaluate_task(
+        self, task: str, final_response: str, screenshot_history: List[str]
+    ) -> Tuple[bool, str]:
+        """Evaluate the overall task completion based on the final response and screenshots."""
+        evaluator_system_prompt = await get_evaluator_system_prompt()
+
+        user_message = self.llm_client.create_user_message_with_images(
+            f"TASK: {task}\nResult Response: {final_response}",
+            screenshot_history,
+            detail="high",
+        )
+        response = await self.llm_client.make_call(
+            [
+                ChatCompletionSystemMessageParam(
+                    role="system", content=evaluator_system_prompt
+                ),
+                user_message,
+            ],
+            self.evaluator_model,
+            json_format=True,
+        )
+        if not response.content:
+            raise ValueError("No response from LLM in evaluate_task")
+
+        response_json = json.loads(response.content)
+        verdict = response_json["verdict"]
+        success = verdict == "success"
+        feedback = response_json["feedback"]
+
+        print(f"Task Evaluation Verdict: {verdict}, Feedback: {feedback}")
+
+        return success, feedback

@@ -20,7 +20,7 @@ class AgentAction:
         args = self.args.copy()
         args.pop("element_id", None)
         if self.element:
-            return f"Action: {self.name}\nElement: {self.element['description']}\nArgs: {json.dumps(args, indent=4)}"
+            return f"Action: {self.name}\nElement: {json.dumps(self.element, indent=4)}\nArgs: {json.dumps(args, indent=4)}"
         else:
             return f"Action: {self.name}\nArgs: {json.dumps(self.args, indent=4)}"
 

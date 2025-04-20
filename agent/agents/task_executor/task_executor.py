@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 from openai.types.chat.chat_completion_assistant_message_param import (
@@ -13,22 +14,37 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 
-from agent.agents.task_executor.prompts import (
-    evaluate_goal_completion_prompt,
-    get_action_choice_prompt,
-    get_evaluator_system_prompt,
-    get_next_goal_prompt,
-    get_system_prompt,
-    get_task_output_prompt,
-)
-from agent.browser.core.tools import TOOLS
 from agent.models import AgentAction
 
 from ...browser import AgentBrowser
 from ...llm import LLMClient
+from .action_chooser import ActionChooser
+from .goal_manager import GoalManager
+from .response_generator import ResponseGenerator
+from .task_evaluator import TaskEvaluator
 
 # Define a type alias for the return type of the run method
 RunReturnType = Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]
+
+
+def get_system_prompt(task: str) -> str:
+    return f"""You are a web browsing assistant helping to complete the following task: "{task}"
+
+Here are the possible actions you can take:
+- click_element (element_id: int): click on an element on the page
+- type_text (element_id: int, text: str): type text into a text box on the page. This will automatically focus on the text box and clear the text box before typing, so you don't need to click on the text box first or clear it.
+- scroll (direction: up | down, amount: float = 0.75): manually scroll the page in the given direction by the given amount
+- navigate (direction: back | forward): go back to the previous page or go forward to the next page
+- go_to_url (url: str): go to a specific url
+- switch_tab (tab_index: int): switch to a different tab
+- find (content_to_find: str): search the page for specific content and automatically scrolls to its location if found. Provide as much context/detail as possible about what you are looking for.
+- extract (information_to_extract: str): Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for.
+- submit_for_evaluation: indicate that you believe the task is complete and ready for evaluation. An external reviewer will assess and provide feedback if any aspects of the task remain incomplete.
+
+
+
+It is currently {datetime.now().strftime("%Y-%m-%d")}
+"""
 
 
 class TaskExecutor:
@@ -57,13 +73,18 @@ class TaskExecutor:
         self.include_captcha_check = False
 
         self.goal = "No goal yet"
-        self.feedback = ""
         self.goal_screenshot_history: List[str] = []
 
         self.task_completed = False
         self.final_response = None
 
         self.iteration = 0
+
+        # Instantiate helpers
+        self.goal_manager = GoalManager(llm_client, browser, model)
+        self.action_chooser = ActionChooser(llm_client, browser, model)
+        self.response_generator = ResponseGenerator(llm_client, model)
+        self.task_evaluator = TaskEvaluator(llm_client)
 
     async def run(
         self,
@@ -87,25 +108,95 @@ class TaskExecutor:
                 await self._wait_for_human_input()
                 continue
 
-            # Get the next action
-            action = await self._choose_next_action()
+            # Get the next action using ActionChooser
+            action = await self.action_chooser.choose_next_action(
+                self.message_history, self.goal
+            )
+
+            # Add the action message to history
+            action_message = ChatCompletionAssistantMessageParam(
+                role="assistant",
+                content=str(action),
+            )
+            self.message_history.append(action_message)
 
             if action.name == "submit_for_evaluation":
-                final_response = await self._prepare_final_response()
-                await self._evaluate_task_for_completion(final_response)
+                final_response = await self.response_generator.prepare_final_response(
+                    self.message_history, self.task
+                )
+                # Update the last message with the final response
+                self.message_history[-1] = ChatCompletionAssistantMessageParam(
+                    role="assistant",
+                    content=str(action) + f"\n\n{final_response}",
+                )
+
+                # Use TaskEvaluator to evaluate completion
+                success, feedback = await self.task_evaluator.evaluate_task(
+                    self.task, final_response, self.screenshot_history
+                )
+
+                # Update state based on evaluation
+                self.task_completed = success
+                if success:
+                    self.final_response = final_response
+                else:
+                    # Add the feedback to history
+                    evaluation_message = ChatCompletionUserMessageParam(
+                        role="user",
+                        content=f"Task was deemed incomplete.\n\nFeedback:\n{feedback}",
+                    )
+                    self.message_history.append(evaluation_message)
             else:
                 # Execute the action
                 success, action_result = await self._execute_action(action)
 
-                self.goal_screenshot_history.append(
-                    self.browser.current_page.screenshot
-                )
-                self.screenshot_history.append(self.browser.current_page.screenshot)
+                # Update the goal and screenshot history since the action has been executed and page has been updated
+                current_screenshot = self.browser.current_page.screenshot
+                self.goal_screenshot_history.append(current_screenshot)
+                self.screenshot_history.append(current_screenshot)
 
-                completed, feedback = await self._evaluate_goal_completion(
-                    action_result
+                # Use GoalManager to evaluate goal completion
+                completed, feedback = await self.goal_manager.evaluate_goal_completion(
+                    self.message_history,
+                    self.goal,
+                    action_result,
+                    self.goal_screenshot_history,
                 )
-                await self._handle_goal_evaluation(completed, feedback, action_result)
+
+                message_content = ""
+                if action_result:
+                    # Add the action result to the message content
+                    message_content = f"ACTION RESULT:\n{action_result}\n\n"
+
+                if completed:
+                    message_content = (
+                        f"{message_content}PREVIOUS GOAL COMPLETED:\n{feedback}"
+                    )
+                    # Determine the next goal
+                    self.goal = await self.goal_manager.determine_next_goal(
+                        [
+                            *self.message_history,
+                            self.llm_client.create_user_message_with_images(
+                                message_content,
+                                [current_screenshot],
+                                detail="high",
+                            ),
+                        ]
+                    )
+                    # Add the next goal to the message content
+                    message_content = f"{message_content}\n\nNEXT GOAL:\n{self.goal}"
+                    # Reset the goal screenshot history to just the current screenshot
+                    self.goal_screenshot_history = [current_screenshot]
+                else:
+                    message_content = f"{message_content}FEEDBACK:\n{feedback}"
+                    self.goal_screenshot_history.append(current_screenshot)
+
+                user_message = self.llm_client.create_user_message_with_images(
+                    message_content,
+                    [current_screenshot],
+                    detail="high",
+                )
+                self.message_history.append(user_message)
 
         self.end_time = time.time()
         self.llm_client.print_token_usage()
@@ -135,123 +226,16 @@ class TaskExecutor:
         self.iteration = 0
         self.screenshot_history.append(self.browser.current_page.screenshot)
 
-        await self._determine_next_goal()
+        # Use GoalManager to determine the next goal
+        self.goal = await self.goal_manager.determine_next_goal(self.message_history)
+        self.goal_screenshot_history = [self.browser.current_page.screenshot]
+
         goal_message = self.llm_client.create_user_message_with_images(
             f"NEXT GOAL:\n{self.goal}",
             [self.browser.current_page.screenshot],
             detail="high",
         )
         self.message_history.append(goal_message)
-
-    async def _determine_next_goal(self):
-        next_goal_prompt = await get_next_goal_prompt(self.browser)
-
-        user_message = self.llm_client.create_user_message_with_images(
-            next_goal_prompt, [self.browser.current_page.screenshot], detail="high"
-        )
-
-        response = await self.llm_client.make_call(
-            [
-                *self.message_history,
-                user_message,
-            ],
-            self.model,
-            json_format=True,
-        )
-
-        if not response.content:
-            raise ValueError("No response content received from LLM")
-
-        response_json = json.loads(response.content)
-        self.goal = response_json["next_goal"]
-        print(f"New goal set:\n{json.dumps(response_json, indent=4)}")
-
-        # Reset the goal screenshot history to just the current screenshot
-        self.goal_screenshot_history = [self.browser.current_page.screenshot]
-
-    async def _evaluate_goal_completion(self, action_result: str) -> Tuple[bool, str]:
-        """Evaluate if the goal has been completed"""
-
-        next_goal_prompt = await evaluate_goal_completion_prompt(
-            self.browser, self.goal, action_result
-        )
-        user_message = self.llm_client.create_user_message_with_images(
-            next_goal_prompt, self.goal_screenshot_history, detail="high"
-        )
-
-        response = await self.llm_client.make_call(
-            [
-                *self.message_history,
-                user_message,
-            ],
-            self.model,
-            json_format=True,
-        )
-
-        if not response.content:
-            raise ValueError("No response content received from LLM")
-
-        response_json = json.loads(response.content)
-        completed = response_json["completed"]
-        if completed:
-            feedback = response_json["feedback"]
-        else:
-            feedback = (
-                response_json["previous_action_evaluation"]
-                + "\n\n"
-                + response_json["feedback"]
-            )
-
-        print(f"Goal Evaluation:\n{json.dumps(response_json, indent=4)}")
-
-        return completed, feedback
-
-    async def _choose_next_action(self) -> AgentAction:
-        """Choose the next action to take
-
-        Note: the benefit of not using o1 to choose the tool is that we get to output other metadata in the response, such as the action description and reasoning.
-        """
-        # Get action choice from primary model
-        action_choice_prompt = await get_action_choice_prompt(
-            self.browser, self.goal, self.feedback
-        )
-        images = [self.browser.current_page.bounding_box_screenshot]
-        user_message = self.llm_client.create_user_message_with_images(
-            action_choice_prompt, images, detail="high"
-        )
-        tool_call_message = await self.llm_client.make_call(
-            [
-                *self.message_history,
-                user_message,
-            ],
-            self.model,
-            tools=TOOLS,
-        )
-        if not tool_call_message.tool_calls:
-            raise ValueError("No tool calls received from LLM")
-
-        tool_call = tool_call_message.tool_calls[0]
-
-        args = json.loads(tool_call.function.arguments)
-
-        action = AgentAction(
-            name=tool_call.function.name,
-            element=self.browser.current_page.elements.get(
-                args.get("element_id", -1), {}
-            ),
-            args=args,
-            tool_call=tool_call,
-        )
-
-        self.message_history.append(
-            ChatCompletionAssistantMessageParam(
-                role="assistant",
-                content=str(action),
-            )
-        )
-        print(tool_call)
-
-        return action
 
     async def _execute_action(self, action: AgentAction):
         """Execute an action, get feedback if necessary, and update message history."""
@@ -268,119 +252,6 @@ class TaskExecutor:
                 ChatCompletionUserMessageParam(role="user", content=error_message)
             )
             return False, error_message
-
-    async def _handle_goal_evaluation(
-        self, completed: bool, feedback: str, action_result: Optional[str] = None
-    ):
-        if completed:
-            # Create a temporary message to pass in the action result and feedback
-            temporary_message = f"GOAL COMPLETED:\n{feedback}"
-            if action_result:
-                temporary_message = (
-                    f"ACTION RESULT:\n{action_result}\n\n{temporary_message}"
-                )
-            user_message = self.llm_client.create_user_message_with_images(
-                temporary_message,
-                [self.browser.current_page.screenshot],
-                detail="high",
-            )
-            self.message_history.append(user_message)
-
-            await self._determine_next_goal()
-            self.message_history.pop()  # pop the temporary message
-
-            message = f"GOAL COMPLETED:\n{feedback}\n\nNEXT GOAL:\n{self.goal}"
-            if action_result:
-                message = f"ACTION RESULT:\n{action_result}\n\n{message}"
-
-            user_message = self.llm_client.create_user_message_with_images(
-                message,
-                [self.browser.current_page.screenshot],
-                detail="high",
-            )
-            self.message_history.append(user_message)
-            self.feedback = ""
-            self.goal_screenshot_history.append(self.browser.current_page.screenshot)
-        else:
-            message = f"FEEDBACK:\n{feedback}"
-            if action_result:
-                message = f"ACTION RESULT:\n{action_result}\n\n{message}"
-
-            user_message = self.llm_client.create_user_message_with_images(
-                message,
-                [self.browser.current_page.screenshot],
-                detail="high",
-            )
-            self.message_history.append(user_message)
-
-            self.feedback = feedback
-
-    async def _prepare_final_response(self) -> str:
-        """Provide any information requested by the task."""
-
-        user_message = ChatCompletionUserMessageParam(
-            role="user",
-            content=get_task_output_prompt(self.task),
-        )
-
-        response = await self.llm_client.make_call(
-            [
-                *self.message_history,
-                user_message,
-            ],
-            self.model,
-            json_format=True,
-        )
-        if not response.content:
-            raise ValueError("No response from LLM")
-        response_json = json.loads(response.content)
-
-        final_response = response_json["response"]
-        information = response_json["information"]
-        if information:
-            formatted_response = f"{final_response}\n\n{information}"
-        else:
-            formatted_response = final_response
-        return formatted_response
-
-    async def _evaluate_task_for_completion(self, final_response: str):
-        """Evaluate the task"""
-        evaluator_system_prompt = await get_evaluator_system_prompt()
-
-        user_message = self.llm_client.create_user_message_with_images(
-            f"TASK: {self.task}\nResult Response: {final_response}",
-            self.screenshot_history,
-            detail="high",
-        )
-        response = await self.llm_client.make_call(
-            [
-                ChatCompletionSystemMessageParam(
-                    role="system", content=evaluator_system_prompt
-                ),
-                user_message,
-            ],
-            "o4-mini",
-            json_format=True,
-        )
-        if not response.content:
-            raise ValueError("No response from LLM")
-        response_json = json.loads(response.content)
-        verdict = response_json["verdict"]
-        success = verdict == "success"
-        feedback = response_json["feedback"]
-
-        self.task_completed = success
-
-        if success:
-            self.final_response = final_response
-        else:
-            # Add evaluation and feedback to message history
-            self.message_history.append(
-                ChatCompletionUserMessageParam(
-                    role="user",
-                    content=f"Task was deemed incomplete.\n\nFeedback:\n{feedback}",
-                )
-            )
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
