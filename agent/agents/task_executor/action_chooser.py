@@ -77,7 +77,7 @@ class ActionChooser:
         goal: str,
     ) -> AgentAction:
         """Choose the next action to take based on the goal and feedback."""
-        # Get action choice from primary model
+
         action_choice_prompt = await get_action_choice_prompt(self.browser, goal)
         images = [self.browser.current_page.bounding_box_screenshot]
         user_message = self.llm_client.create_user_message_with_images(

@@ -27,7 +27,7 @@ Output your response in JSON format.
 }}"""
 
 
-class ResponseGenerator:
+class TaskOutputGenerator:
     def __init__(self, llm_client: LLMClient, model: str):
         self.llm_client = llm_client
         self.model = model
@@ -61,5 +61,5 @@ class ResponseGenerator:
         else:
             formatted_response = final_response
 
-        print(f"Prepared Final Response: {formatted_response}")
+        print(formatted_response)
         return formatted_response
