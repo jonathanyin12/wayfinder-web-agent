@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from openai.types.chat.chat_completion_assistant_message_param import (
     ChatCompletionAssistantMessageParam,
@@ -26,6 +26,9 @@ from agent.models import AgentAction
 
 from ...browser import AgentBrowser
 from ...llm import LLMClient
+
+# Define a type alias for the return type of the run method
+RunReturnType = Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]
 
 
 class TaskExecutor:
@@ -58,25 +61,27 @@ class TaskExecutor:
         self.goal_screenshot_history: List[str] = []
 
         self.task_completed = False
+        self.final_response = None
+
+        self.iteration = 0
 
     async def run(
         self,
-    ) -> Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]:
-        print(f"Starting task: {self.task}")
-        start_time = time.time()
-        iteration = 0
+    ) -> RunReturnType:
+        """Run the task executor"""
+        await self._initialize_run()
 
-        await self._determine_next_goal()
-        goal_message = self.llm_client.create_user_message_with_images(
-            f"NEXT GOAL:\n{self.goal}",
-            [self.browser.current_page.screenshot],
-            detail="high",
-        )
-        self.message_history.append(goal_message)
-        self.goal_screenshot_history.append(self.browser.current_page.screenshot)
+        while self.iteration < self.max_iterations and not self.task_completed:
+            print(f"Iteration {self.iteration}")
+            self.iteration += 1
+            self.llm_client.print_token_usage()
+            self.llm_client.print_message_history(
+                cast(
+                    List[ChatCompletionMessageParam | Dict[str, Any]],
+                    self.message_history,
+                )
+            )
 
-        while iteration < self.max_iterations and not self.task_completed:
-            self.screenshot_history.append(self.browser.current_page.screenshot)
             # Check for captcha first before planning the next action
             if self.include_captcha_check and await self.browser.check_for_captcha():
                 await self._wait_for_human_input()
@@ -86,99 +91,57 @@ class TaskExecutor:
             action = await self._choose_next_action()
 
             if action.name == "submit_for_evaluation":
-                final_response = await self._prepare_task_output()
-                success, reasoning = await self._task_evaluation(final_response)
-                if success:
-                    self.task_completed = True
-                    return (
-                        final_response,
-                        self.message_history,
-                        self.screenshot_history,
-                        iteration,
-                        time.time() - start_time,
-                    )
-                else:
-                    self.message_history.append(
-                        ChatCompletionUserMessageParam(
-                            role="user",
-                            content=f"Task was deemed incomplete.\n\nReasoning:\n{reasoning}",
-                        )
-                    )
-                    continue
+                final_response = await self._prepare_final_response()
+                await self._evaluate_task_for_completion(final_response)
+            else:
+                # Execute the action
+                success, action_result = await self._execute_action(action)
 
-            # Execute the action
-            success, action_result = await self._execute_action(action)
-
-            self.goal_screenshot_history.append(self.browser.current_page.screenshot)
-            completed, feedback = await self._evaluate_goal_completion(action_result)
-
-            if completed:
-                # Create a temporary message to pass in the action result and feedback
-                temporary_message = f"GOAL COMPLETED:\n{feedback}"
-                if action_result:
-                    temporary_message = (
-                        f"ACTION RESULT:\n{action_result}\n\n{temporary_message}"
-                    )
-                user_message = self.llm_client.create_user_message_with_images(
-                    temporary_message,
-                    [self.browser.current_page.screenshot],
-                    detail="high",
-                )
-                self.message_history.append(user_message)
-
-                await self._determine_next_goal()
-                self.message_history.pop()  # pop the temporary message
-
-                message = f"GOAL COMPLETED:\n{feedback}\n\nNEXT GOAL:\n{self.goal}"
-                if action_result:
-                    message = f"ACTION RESULT:\n{action_result}\n\n{message}"
-
-                user_message = self.llm_client.create_user_message_with_images(
-                    message,
-                    [self.browser.current_page.screenshot],
-                    detail="high",
-                )
-                self.message_history.append(user_message)
-                self.feedback = ""
                 self.goal_screenshot_history.append(
                     self.browser.current_page.screenshot
                 )
-            else:
-                message = f"FEEDBACK:\n{feedback}"
-                if action_result:
-                    message = f"ACTION RESULT:\n{action_result}\n\n{message}"
+                self.screenshot_history.append(self.browser.current_page.screenshot)
 
-                user_message = self.llm_client.create_user_message_with_images(
-                    message,
-                    [self.browser.current_page.screenshot],
-                    detail="high",
+                completed, feedback = await self._evaluate_goal_completion(
+                    action_result
                 )
-                self.message_history.append(user_message)
+                await self._handle_goal_evaluation(completed, feedback, action_result)
 
-                self.feedback = feedback
-
-            self.llm_client.print_token_usage()
-            self.llm_client.print_message_history(self.message_history)
-            iteration += 1
-
+        self.end_time = time.time()
         self.llm_client.print_token_usage()
 
-        if iteration >= self.max_iterations:
+        if self.task_completed:
+            assert self.final_response is not None
+            return (
+                self.final_response,
+                self.message_history,
+                self.screenshot_history,
+                self.iteration,
+                self.end_time - self.start_time,
+            )
+
+        else:
             return (
                 f"Failed to complete task within {self.max_iterations} iterations",
                 self.message_history,
                 self.screenshot_history,
-                iteration,
-                time.time() - start_time,
+                self.iteration,
+                self.end_time - self.start_time,
             )
-        task_output = await self._prepare_task_output()
-        return (
-            task_output,
-            self.message_history,
-            self.screenshot_history,
-            iteration,
-            time.time() - start_time,
+
+    async def _initialize_run(self):
+        print(f"Starting task: {self.task}")
+        self.start_time = time.time()
+        self.iteration = 0
+        self.screenshot_history.append(self.browser.current_page.screenshot)
+
+        await self._determine_next_goal()
+        goal_message = self.llm_client.create_user_message_with_images(
+            f"NEXT GOAL:\n{self.goal}",
+            [self.browser.current_page.screenshot],
+            detail="high",
         )
+        self.message_history.append(goal_message)
 
     async def _determine_next_goal(self):
         next_goal_prompt = await get_next_goal_prompt(self.browser)
@@ -202,7 +165,9 @@ class TaskExecutor:
         response_json = json.loads(response.content)
         self.goal = response_json["next_goal"]
         print(f"New goal set:\n{json.dumps(response_json, indent=4)}")
-        self.goal_screenshot_history = []
+
+        # Reset the goal screenshot history to just the current screenshot
+        self.goal_screenshot_history = [self.browser.current_page.screenshot]
 
     async def _evaluate_goal_completion(self, action_result: str) -> Tuple[bool, str]:
         """Evaluate if the goal has been completed"""
@@ -304,7 +269,53 @@ class TaskExecutor:
             )
             return False, error_message
 
-    async def _prepare_task_output(self) -> str:
+    async def _handle_goal_evaluation(
+        self, completed: bool, feedback: str, action_result: Optional[str] = None
+    ):
+        if completed:
+            # Create a temporary message to pass in the action result and feedback
+            temporary_message = f"GOAL COMPLETED:\n{feedback}"
+            if action_result:
+                temporary_message = (
+                    f"ACTION RESULT:\n{action_result}\n\n{temporary_message}"
+                )
+            user_message = self.llm_client.create_user_message_with_images(
+                temporary_message,
+                [self.browser.current_page.screenshot],
+                detail="high",
+            )
+            self.message_history.append(user_message)
+
+            await self._determine_next_goal()
+            self.message_history.pop()  # pop the temporary message
+
+            message = f"GOAL COMPLETED:\n{feedback}\n\nNEXT GOAL:\n{self.goal}"
+            if action_result:
+                message = f"ACTION RESULT:\n{action_result}\n\n{message}"
+
+            user_message = self.llm_client.create_user_message_with_images(
+                message,
+                [self.browser.current_page.screenshot],
+                detail="high",
+            )
+            self.message_history.append(user_message)
+            self.feedback = ""
+            self.goal_screenshot_history.append(self.browser.current_page.screenshot)
+        else:
+            message = f"FEEDBACK:\n{feedback}"
+            if action_result:
+                message = f"ACTION RESULT:\n{action_result}\n\n{message}"
+
+            user_message = self.llm_client.create_user_message_with_images(
+                message,
+                [self.browser.current_page.screenshot],
+                detail="high",
+            )
+            self.message_history.append(user_message)
+
+            self.feedback = feedback
+
+    async def _prepare_final_response(self) -> str:
         """Provide any information requested by the task."""
 
         user_message = ChatCompletionUserMessageParam(
@@ -317,7 +328,7 @@ class TaskExecutor:
                 *self.message_history,
                 user_message,
             ],
-            "gpt-4o",
+            self.model,
             json_format=True,
         )
         if not response.content:
@@ -332,7 +343,7 @@ class TaskExecutor:
             formatted_response = final_response
         return formatted_response
 
-    async def _task_evaluation(self, final_response: str) -> Tuple[bool, str]:
+    async def _evaluate_task_for_completion(self, final_response: str):
         """Evaluate the task"""
         evaluator_system_prompt = await get_evaluator_system_prompt()
 
@@ -357,7 +368,19 @@ class TaskExecutor:
         verdict = response_json["verdict"]
         success = verdict == "success"
         feedback = response_json["feedback"]
-        return success, feedback
+
+        self.task_completed = success
+
+        if success:
+            self.final_response = final_response
+        else:
+            # Add evaluation and feedback to message history
+            self.message_history.append(
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Task was deemed incomplete.\n\nFeedback:\n{feedback}",
+                )
+            )
 
     # Human Control Methods
     async def _wait_for_human_input(self) -> None:
