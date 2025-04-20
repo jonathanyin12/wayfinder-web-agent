@@ -35,10 +35,10 @@
     newElement.className = "GWA-rect";
     newElement.style.border = "2px solid brown";
     newElement.style.position = "absolute";
-    newElement.style.top = `${adjustedTop - 3}px`;
-    newElement.style.left = `${adjustedLeft - 3}px`;
-    newElement.style.width = `${rect.width + 6}px`;
-    newElement.style.height = `${rect.height + 6}px`;
+    newElement.style.top = `${adjustedTop}px`;
+    newElement.style.left = `${adjustedLeft}px`;
+    newElement.style.width = `${rect.width}px`;
+    newElement.style.height = `${rect.height}px`;
     newElement.style.zIndex = "2147483647";
     newElement.style.pointerEvents = "none";
     newElement.style.backgroundColor = "rgba(165, 42, 42, 0.1)";
@@ -51,13 +51,21 @@
     label.style.position = "absolute";
     label.style.lineHeight = "16px";
     label.style.padding = "1px";
-    label.style.top = `${adjustedTop}px`;
-    label.style.left = `${adjustedLeft}px`;
     label.style.color = "white";
     label.style.fontWeight = "bold";
     label.style.fontSize = "14px";
     label.style.backgroundColor = "brown";
     label.style.zIndex = "2147483647";
+
+    // Adjust label position if the element is too small vertically
+    if (rect.height < 24 || rect.width < 24) {
+      label.style.top = `${adjustedTop - 16}px`;
+      label.style.left = `${adjustedLeft}px`;
+    } else {
+      label.style.top = `${adjustedTop}px`;
+      label.style.left = `${adjustedLeft}px`;
+    }
+
     document.body.appendChild(label);
   });
 

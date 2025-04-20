@@ -9,7 +9,7 @@
 
   const elements = Array.from(
     document.querySelectorAll(
-      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='listbox'], [role='menuitem'], [role='tab'], [role='link']"
+      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='option'], [role='menuitem'], [role='tab'], [role='link']"
     )
   );
   let element_simplified_htmls = {}; // HTML for each element index
@@ -169,15 +169,76 @@
     if (isElementVisible(element)) {
       const tagName = element.tagName.toLowerCase();
       let simplified_html = "<" + tagName;
-      for (const attr of ["aria-label", "alt", "placeholder", "value"]) {
+      const attrs = [
+        // Standard Attributes
+        "id",
+        "name",
+        "role",
+        "type", // Especially for input
+        "value",
+        "placeholder",
+        "title",
+        "alt", // Primarily for images within interactive elements
+        "href", // Primarily for <a>
+        // Boolean State Attributes
+        "checked",
+        "selected",
+        "disabled",
+        "readonly",
+        // ARIA Attributes
+        "aria-label",
+        "aria-checked",
+        "aria-selected",
+        "aria-expanded",
+        "aria-pressed",
+        "aria-disabled",
+        "aria-current",
+        "aria-haspopup",
+        // We might consider aria-labelledby/describedby later, but they require extra logic
+      ];
+      for (const attr of attrs) {
         if (element.hasAttribute(attr)) {
           let attrValue = element.getAttribute(attr);
-          simplified_html += ` ${attr}="${attrValue}"`;
+          // For boolean attributes present as empty strings, represent them consistently
+          if (
+            attrValue === "" &&
+            [
+              "checked",
+              "selected",
+              "disabled",
+              "readonly",
+              "aria-checked",
+              "aria-selected",
+              "aria-expanded",
+              "aria-pressed",
+              "aria-disabled",
+              "aria-current",
+            ].includes(attr)
+          ) {
+            attrValue = "true";
+          }
+          // Avoid adding empty value attributes unless it's intentional (like value="")
+          if (
+            attrValue !== "" ||
+            attr === "value" ||
+            attr === "alt" ||
+            attr === "placeholder" ||
+            attr === "title" ||
+            attr === "href"
+          ) {
+            // Truncate attribute value if it exceeds 50 characters (useful for hrefs)
+            if (attrValue && attrValue.length > 50) {
+              attrValue = attrValue.substring(0, 47) + "...";
+            }
+            simplified_html += ` ${attr}="${attrValue}"`;
+          }
         }
       }
 
       // Get inner text from the element.
-      let innerText = element.textContent?.replace(/\n/g, " ").trim() || "";
+      // let innerText = element.textContent?.replace(/\n/g, " ").trim() || "";
+      // @ts-ignore
+      let innerText = element.innerText;
 
       // For input elements, we need to look elsewhere for the visible label text.
       if (tagName === "input" && innerText === "") {
@@ -220,12 +281,12 @@
                 .trim() || "";
           }
         }
-        // 4. Fallback to the "value" or "placeholder" attribute.
-        if (innerText === "") {
+        // 3.5 Check if the next sibling element (regardless of tag) holds the text.
+        if (innerText === "" && element.nextElementSibling) {
           innerText =
-            element.getAttribute("value") ||
-            element.getAttribute("placeholder") ||
-            "";
+            element.nextElementSibling.textContent
+              ?.replace(/\\n/g, " ")
+              .trim() || "";
         }
       }
 
