@@ -15,7 +15,8 @@ def get_task_output_prompt(task: str) -> str:
 
 2. Provide a final response to the task.
 - If the task was not completed, briefly explain why not.
-- If the task requires information to be returned, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
+- If the task requires information to be returned, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing. 
+- Use markdown to format the response if there is any structured information to return.
 
 As a reminder, the task is: {task}
             
