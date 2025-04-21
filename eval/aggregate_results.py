@@ -85,8 +85,7 @@ def analyze_results(
                     metadata = json.load(fr)
 
                 # Extract token usage data if available
-                if "token_usage" in metadata:
-                    total_cost += metadata["token_usage"]["run_cost"]
+                total_cost += metadata["run_cost"]
 
                 auto_eval_res = metadata.get("auto_eval", {})
                 if auto_eval_res:

@@ -164,7 +164,7 @@ async def find(
     page_height: int,
 ):
     """Scroll to the content on the page"""
-    crops = label_screenshots(full_page_screenshot_crops)
+    crops = label_screenshots(full_page_screenshot_crops)[:-20]
     crop_height = 1600
 
     find_result = await _find_content_on_page(content_to_find, crops, llm_client)

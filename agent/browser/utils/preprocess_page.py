@@ -384,7 +384,7 @@ Output your response in JSON format.
 }}"""
 
     user_message = llm_client.create_user_message_with_images(
-        prompt, full_page_screenshot_crops, "high"
+        prompt, full_page_screenshot_crops[:-20], "high"
     )
     response = await llm_client.make_call(
         [user_message], "gpt-4.1-mini", json_format=True
