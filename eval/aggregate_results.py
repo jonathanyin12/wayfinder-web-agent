@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import statistics
 import sys
 from typing import Any, Dict, List, Tuple
 
@@ -73,6 +74,7 @@ def analyze_results(
         successful_file_dirs = []
         failed_file_dirs = []
         unclear_file_dirs = []
+        web_iterations = []  # List to store iteration counts for this website
         # Check each possible task ID
         for idx in range(0, 46):
             task_id = f"{web}--{idx}"
@@ -88,6 +90,10 @@ def analyze_results(
 
                 # Extract token usage data if available
                 total_cost += metadata["run_cost"]
+
+                # Extract iteration count if available
+                if "iterations" in metadata:
+                    web_iterations.append(metadata["iterations"])
 
                 auto_eval_res = metadata.get("auto_eval", {})
                 if auto_eval_res:
@@ -106,6 +112,19 @@ def analyze_results(
                         unclear_file_dirs.append(file_dir)
                         all_unclear_tasks.append(task_id)  # Track unclear task IDs
 
+        # Calculate iteration statistics for this website
+        avg_iterations = None
+        std_dev_iterations = None
+        if web_iterations:
+            avg_iterations = statistics.mean(web_iterations)
+            if len(web_iterations) > 1:
+                try:
+                    std_dev_iterations = statistics.stdev(web_iterations)
+                except statistics.StatisticsError:
+                    std_dev_iterations = 0.0  # Handle case with identical values
+            else:
+                std_dev_iterations = 0.0  # Std dev is 0 for a single data point
+
         # Calculate success rate for this website
         if web_total_tasks > 0:
             web_success_rate = web_successful_tasks / web_total_tasks * 100
@@ -116,10 +135,16 @@ def analyze_results(
                 "successful_file_dirs": successful_file_dirs,
                 "failed_file_dirs": failed_file_dirs,
                 "unclear_file_dirs": unclear_file_dirs,  # Store unclear file dirs
+                "avg_iterations": avg_iterations,
+                "std_dev_iterations": std_dev_iterations,
             }
             print(
                 f"{web} Success Rate: {web_success_rate:.2f}% ({web_successful_tasks}/{web_total_tasks} tasks)"
             )
+            if avg_iterations is not None and std_dev_iterations is not None:
+                print(
+                    f"  Avg Iterations: {avg_iterations:.2f} (± {std_dev_iterations:.2f})"
+                )
 
     return (
         web_success_rates,
@@ -189,8 +214,14 @@ def save_results_summary(
         )
         for web, stats in sorted_webs:
             f.write(
-                f"{web}: {stats['success_rate']:.2f}% ({stats['successful_tasks']}/{stats['total_tasks']} tasks)\n"
+                f"{web}: {stats['success_rate']:.2f}% ({stats['successful_tasks']}/{stats['total_tasks']} tasks)"
             )
+            # Add iteration stats if available
+            avg_iter = stats.get("avg_iterations")
+            std_dev_iter = stats.get("std_dev_iterations")
+            if avg_iter is not None and std_dev_iter is not None:
+                f.write(f"  Avg Iterations: {avg_iter:.2f} (± {std_dev_iter:.2f})")
+            f.write("\n")
 
         f.write("\nTotal cost:\n")
         f.write("-------------\n")
