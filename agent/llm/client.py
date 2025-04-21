@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion_content_part_image_param import (
     ChatCompletionContentPartImageParam,
@@ -54,6 +54,7 @@ class LLMClient:
             api_version="2025-01-01-preview",
             azure_endpoint="https://jonathan-research.openai.azure.com",
         )
+        self.oai_client = AsyncOpenAI()
         self.max_retries = 3
         self.token_usage = {}
 
@@ -68,6 +69,10 @@ class LLMClient:
         reasoning_effort: Optional[Literal["low", "medium", "high"]] = "high",
     ) -> ChatCompletionMessage:
         """Helper method to make LLM API calls with retry logic"""
+        if model == "o4-mini":
+            client = self.oai_client
+        else:
+            client = self.client
         try:
             kwargs = {}
             if json_format and not tools:
@@ -81,7 +86,7 @@ class LLMClient:
                 kwargs["tool_choice"] = "required"
                 kwargs["parallel_tool_calls"] = False
 
-            response = await self.client.with_options(
+            response = await client.with_options(
                 timeout=timeout
             ).chat.completions.create(model=model, messages=messages, **kwargs)
 
