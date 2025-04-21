@@ -163,7 +163,10 @@ async def auto_eval(process_dir, openai_client, api_model, img_num):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_dir", type=str, default="results")
+    parser.add_argument(
+        "output_dir",
+        type=str,
+    )
     parser.add_argument("--api_model", default="o1", type=str, help="api model name")
     parser.add_argument("--max_attached_imgs", type=int, default=15)
     args = parser.parse_args()
