@@ -16,7 +16,7 @@ def get_task_output_prompt(task: str) -> str:
 2. Provide a final response to the task.
 - If the task was not completed, briefly explain why not.
 - If the task requires information to be returned, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing. 
-- Use markdown to format the response if there is any structured information to return.
+- Provide the response in clear, natural language, using complete sentences. If you need to present structured data (like lists or tables), use markdown formatting. Ensure the final response itself is *not* a JSON object.
 
 As a reminder, the task is: {task}
             
@@ -25,7 +25,7 @@ Output your response in JSON format.
 {{
     "reasoning": <reasoning about whether the task requires any information to be returned>,
     "requires_information": <True if the task requires information to be returned, False otherwise>,
-    "response": <final response to the task>,
+    "final_response": <final response to the task>,
 }}"""
 
 
@@ -56,7 +56,7 @@ class TaskOutputGenerator:
             raise ValueError("No response from LLM in prepare_final_response")
         response_json = json.loads(response.content)
 
-        final_response = response_json["response"]
+        final_response = response_json["final_response"]
 
         print(final_response)
         return final_response

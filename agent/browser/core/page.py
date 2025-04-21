@@ -45,7 +45,8 @@ class AgentBrowserPage:
         self.bounding_box_screenshot = ""
         self.full_page_screenshot = ""
         self.previous_page_url = ""
-        self.page_overview = ""
+        self.page_summary = ""
+        self.page_breakdown = ""
         self.output_dir = output_dir
 
         self.is_new_page = False  # Whether the current page's url is different from the previous page's url

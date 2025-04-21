@@ -80,7 +80,7 @@ class TaskExecutor:
         self.task_completed = False
         self.final_response = None
 
-        self.include_prev_screenshots = False
+        self.include_prev_screenshots = True
 
         self.iteration = 0
 

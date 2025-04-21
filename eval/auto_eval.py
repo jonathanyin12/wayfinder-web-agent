@@ -107,6 +107,8 @@ async def auto_eval(process_dir, openai_client, model, img_num):
         )
 
     user_prompt_tmp = USER_PROMPT.replace("<task>", metadata["objective"])
+    if not isinstance(metadata["final_response"], str):
+        metadata["final_response"] = json.dumps(metadata["final_response"])
     user_prompt_tmp = user_prompt_tmp.replace("<answer>", metadata["final_response"])
     user_prompt_tmp = user_prompt_tmp.replace("<num>", str(img_num))
     messages = [
@@ -156,6 +158,7 @@ async def auto_eval(process_dir, openai_client, model, img_num):
 
     response = json.loads(response)
     response["eval_cost"] = cost
+    response["eval_model"] = model
     verdict = response["verdict"]
     reasoning = response["explanation"]
 
@@ -176,7 +179,7 @@ async def main():
         "output_dir",
         type=str,
     )
-    parser.add_argument("--model", default="o1", type=str, help="api model name")
+    parser.add_argument("--model", default="o4-mini", type=str, help="api model name")
     parser.add_argument("--max_attached_imgs", type=int, default=15)
     args = parser.parse_args()
 
