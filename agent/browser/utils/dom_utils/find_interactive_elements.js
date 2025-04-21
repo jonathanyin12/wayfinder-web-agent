@@ -74,10 +74,10 @@
       return false;
     }
 
-    // Check if element is actually clickable/interactive
-    if (style.pointerEvents === "none") {
-      return false;
-    }
+    // // Check if element is actually clickable/interactive
+    // if (style.pointerEvents === "none") {
+    //   return false;
+    // }
 
     // Special handling for small form elements
     const isHTMLInputElement = element.tagName.toLowerCase() === "input";
