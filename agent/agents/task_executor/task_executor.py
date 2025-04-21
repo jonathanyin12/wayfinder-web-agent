@@ -38,7 +38,7 @@ Here are the possible actions you can take:
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
 - find (content_to_find: str): search the page for specific content and automatically scrolls to its location if found. Provide as much context/detail as possible about what you are looking for.
-- extract (information_to_extract: str): Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for.
+- extract (information_to_extract: str): Gets the entire text content of the page and extracts textual information based on a descriptive query.
 - submit_for_evaluation: indicate that you believe the task is complete and ready for evaluation. An external reviewer will assess and provide feedback if any aspects of the task remain incomplete.
 
 

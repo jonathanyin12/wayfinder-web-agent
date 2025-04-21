@@ -88,7 +88,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "extract",
-            "description": "Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for.",
+            "description": "Gets the entire text content of the page and extracts textual information based on a descriptive query. The content does not need to be currently visible on the page to be extracted.",
             "parameters": {
                 "type": "object",
                 "properties": {
