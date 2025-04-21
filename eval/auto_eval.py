@@ -6,7 +6,7 @@ import os
 import time
 from typing import Any
 
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 MODEL_PRICING = {
     "gpt-4o-mini": {
@@ -39,29 +39,38 @@ SYSTEM_PROMPT = """As an evaluator, you will be presented with three primary com
 
 1. Web Task Instruction: This is a clear and specific directive provided in natural language, detailing the online activity to be carried out. These requirements may include conducting searches, verifying information, comparing prices, checking availability, or any other action relevant to the specified web service (such as Amazon, Apple, ArXiv, BBC News, Booking etc).
 
-2. Result Screenshots: This is a visual representation of the screen showing the result or intermediate state of performing a web task. It serves as visual proof of the actions taken in response to the instruction, and may not represent everything the agent sees.
+2. Screenshots: This is a visual representation of the screen showing the process of performing a web task. It serves as visual proof of the actions taken in response to the instruction. The screenshots are ordered in chronological order.
 
 3. Result Response: This is a textual response obtained after the execution of the web task. It serves as textual result in response to the instruction.
 
--- You DO NOT NEED to interact with web pages or perform actions such as booking flights or conducting searches on websites.
--- You SHOULD NOT make assumptions based on information not presented in the screenshot when comparing it to the instructions. If you cannot find any information in the screenshot that matches the instruction, you can believe the information in the response.
--- Your primary responsibility is to conduct a thorough assessment of the web task instruction against the outcome depicted in the screenshot and in the response, evaluating whether the actions taken align with the given instructions.
--- NOTE that the instruction may involve more than one task, for example, locating the garage and summarizing the review. Failing to complete either task, such as not providing a summary, should be considered unsuccessful.
--- NOTE that the screenshot is authentic, but the response provided by LLM is generated at the end of web browsing, and there may be discrepancies between the text and the screenshots.
--- Note the difference: 1) Result response may contradict the screenshot, then the content of the screenshot prevails, 2) The content in the Result response is not mentioned on the screenshot, choose to believe the content.
--- If you are not sure whether you should believe the content in the response, you should choose unknown.
 
-You should elaborate on how you arrived at your final evaluation and then provide a definitive verdict on whether the task has been successfully accomplished, either as 'success', 'failed', or 'unknown'.
+Your primary responsibility is to evaluate the task completion by:
+1. Assessing whether the actions shown in screenshots and described in the response align with the web task instructions
+2. Verifying that all conditions and parts of the instructions were met and completed successfully
+3. Using screenshots as the definitive source of truth when explicit contradictions exist with the text response. The text response not being present in the screenshots is not a contradiction.
+
+Note: The person performing the task is able to extract textual information from the page without scrolling to it first. As a result, it's possible some information they gathered in the result response cannot be verified through the screenshots. 
+
+Rules:
+- IF THERE'S NO EVIDENCE IN THE SCREENSHOTS TO VERIFY THE INFORMATION IN THE RESULT RESPONSE, YOU SHOULD CHOOSE 'UNCLEAR'.
+- YOU SHOULD ONLY CHOOSE 'FAILED' IF YOU HAVE EXPLICIT EVIDENCE THAT THE TASK WAS NOT COMPLETED SUCCESSFULLY.
+
+
+Provide detailed feedback explaining:
+- For successful tasks: Why the task was completed correctly
+- For failed tasks: What went wrong and what should have been done differently
+- For unclear verdicts: What information was missing to make a determination
+
 
 Output a JSON object with the following format:
 {
-    "reasoning": <evaluation reasoning>,
-    "verdict": <success | failed | unknown>
+    "verdict": <success | failed | unclear>
+    "explanation": <explanation>
 }"""
 
 USER_PROMPT = """TASK: <task>
 Result Response: <answer>
-<num> screenshots at the end: """
+The last <num> screenshots are attached. """
 
 
 def encode_image(image_path):
@@ -69,7 +78,7 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
-async def auto_eval(process_dir, openai_client, api_model, img_num):
+async def auto_eval(process_dir, openai_client, model, img_num):
     print(f"--------------------- {process_dir} ---------------------")
     cost = 0  # Initialize cost for this evaluation
 
@@ -112,12 +121,12 @@ async def auto_eval(process_dir, openai_client, api_model, img_num):
     while True:
         try:
             kwargs: dict[str, Any] = {"response_format": {"type": "json_object"}}
-            if api_model.startswith("gpt"):
+            if model.startswith("gpt"):
                 kwargs["temperature"] = 0.0
-            if api_model.startswith("o"):
+            if model.startswith("o"):
                 kwargs["reasoning_effort"] = "high"
             openai_response = await openai_client.chat.completions.create(
-                model=api_model,
+                model=model,
                 messages=messages,
                 seed=42,
                 **kwargs,
@@ -127,9 +136,9 @@ async def auto_eval(process_dir, openai_client, api_model, img_num):
             # Calculate and store cost
             cost = (
                 openai_response.usage.prompt_tokens
-                * MODEL_PRICING[api_model]["prompt_tokens"]
+                * MODEL_PRICING[model]["prompt_tokens"]
                 + openai_response.usage.completion_tokens
-                * MODEL_PRICING[api_model]["completion_tokens"]
+                * MODEL_PRICING[model]["completion_tokens"]
             )
             print("Cost:", cost)
             break
@@ -148,10 +157,10 @@ async def auto_eval(process_dir, openai_client, api_model, img_num):
     response = json.loads(response)
     response["eval_cost"] = cost
     verdict = response["verdict"]
-    reasoning = response["reasoning"]
+    reasoning = response["explanation"]
 
     print("Verdict:", verdict)
-    print("Reasoning:", reasoning)
+    print("Explanation:", reasoning)
 
     # Add auto evaluation result to metadata
     metadata["auto_eval"] = response
@@ -167,14 +176,17 @@ async def main():
         "output_dir",
         type=str,
     )
-    parser.add_argument("--api_model", default="o1", type=str, help="api model name")
+    parser.add_argument("--model", default="o1", type=str, help="api model name")
     parser.add_argument("--max_attached_imgs", type=int, default=15)
     args = parser.parse_args()
 
-    client = AsyncAzureOpenAI(
-        api_version="2025-01-01-preview",
-        azure_endpoint="https://jonathan-research.openai.azure.com",
-    )
+    if args.model == "o4-mini":
+        client = AsyncOpenAI()
+    else:
+        client = AsyncAzureOpenAI(
+            api_version="2025-01-01-preview",
+            azure_endpoint="https://jonathan-research.openai.azure.com",
+        )
     webs = [
         "Allrecipes",
         "Amazon",
@@ -200,9 +212,9 @@ async def main():
 
     from tqdm.asyncio import tqdm_asyncio
 
-    async def process_task(file_dir, client, api_model, max_attached_imgs):
+    async def process_task(file_dir, client, model, max_attached_imgs):
         async with semaphore:
-            return await auto_eval(file_dir, client, api_model, max_attached_imgs)
+            return await auto_eval(file_dir, client, model, max_attached_imgs)
 
     all_tasks = []
     # Collect all tasks that need to be run across all websites
@@ -216,13 +228,11 @@ async def main():
                     with open(metadata_file) as fr:
                         metadata = json.load(fr)
                     # Skip if the auto evaluation result is already in the metadata
-                    if "auto_eval" not in metadata:
-                        task = process_task(
-                            file_dir, client, args.api_model, args.max_attached_imgs
-                        )
-                        all_tasks.append(
-                            {"task": task, "file_dir": file_dir, "web": web}
-                        )
+                    # if "auto_eval" not in metadata:
+                    task = process_task(
+                        file_dir, client, args.model, args.max_attached_imgs
+                    )
+                    all_tasks.append({"task": task, "file_dir": file_dir, "web": web})
                 except json.JSONDecodeError:
                     print(
                         f"Warning: Could not decode JSON from {metadata_file}. Skipping."

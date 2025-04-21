@@ -24,7 +24,9 @@ from .task_evaluator import TaskEvaluator
 from .task_output_generator import TaskOutputGenerator
 
 # Define a type alias for the return type of the run method
-RunReturnType = Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]
+RunReturnType = Tuple[
+    str, List[ChatCompletionMessageParam], List[str], List[str], int, float
+]
 
 
 def get_system_prompt(task: str) -> str:
@@ -38,7 +40,7 @@ Here are the possible actions you can take:
 - go_to_url (url: str): go to a specific url
 - switch_tab (tab_index: int): switch to a different tab
 - find (content_to_find: str): search the page for specific content and automatically scrolls to its location if found. Provide as much context/detail as possible about what you are looking for.
-- extract (information_to_extract: str): Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for.
+- extract (information_to_extract: str): Gets the entire text content of the page and extracts textual information based on a descriptive query.
 - submit_for_evaluation: indicate that you believe the task is complete and ready for evaluation. An external reviewer will assess and provide feedback if any aspects of the task remain incomplete.
 
 
@@ -68,6 +70,7 @@ class TaskExecutor:
             )
         ]
 
+        self.url_history: List[str] = []
         self.screenshot_history: List[str] = []
         self.include_captcha_check = False
 
@@ -162,12 +165,25 @@ class TaskExecutor:
                 current_screenshot = self.browser.current_page.screenshot
                 self.goal_screenshot_history.append(current_screenshot)
                 self.screenshot_history.append(current_screenshot)
+                if self.browser.current_page.page.url != self.url_history[-1]:
+                    self.url_history.append(self.browser.current_page.page.url)
 
                 # Evaluate goal completion
+                if action_result:
+                    # Add the action result to the message history
+                    evaluation_message_history = [
+                        *self.message_history,
+                        ChatCompletionUserMessageParam(
+                            role="user",
+                            content=f"ACTION RESULT:\n{action_result}",
+                        ),
+                    ]
+                else:
+                    evaluation_message_history = self.message_history
+
                 completed, feedback = await self.goal_manager.evaluate_goal_completion(
-                    self.message_history,
+                    evaluation_message_history,
                     self.goal,
-                    action_result,
                     self.goal_screenshot_history,
                 )
 
@@ -188,6 +204,7 @@ class TaskExecutor:
             self.final_response,
             self.message_history,
             self.screenshot_history,
+            self.url_history,
             self.iteration,
             self.end_time - self.start_time,
         )
@@ -198,7 +215,7 @@ class TaskExecutor:
         self.iteration = 0
         screenshot = self.browser.current_page.screenshot
         self.screenshot_history.append(screenshot)
-
+        self.url_history.append(self.browser.current_page.page.url)
         # Use GoalManager to determine the next goal
         self.goal = await self.goal_manager.determine_next_goal(self.message_history)
         self.goal_screenshot_history = [screenshot]
@@ -214,6 +231,8 @@ class TaskExecutor:
         """Execute an action, get feedback if necessary, and update message history."""
         try:
             action_result = await self.browser.execute_action(action)
+            if action_result:
+                print(f"Action result:\n{action_result}")
             return True, action_result
         except Exception as e:
             error_message = f"Error executing action '{action.description}': {e}"
@@ -271,10 +290,9 @@ class TaskExecutor:
             ) = await self.goal_manager.evaluate_goal_validity(
                 [
                     *self.message_history,
-                    self.llm_client.create_user_message_with_images(
-                        message_content,
-                        [current_screenshot],
-                        detail="high",
+                    ChatCompletionUserMessageParam(
+                        role="user",
+                        content=message_content,
                     ),
                 ],
                 self.goal,
