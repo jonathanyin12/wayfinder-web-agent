@@ -48,7 +48,7 @@
 {"web_name": "Amazon", "id": "Amazon--2", "ques": "Find a gaming desktop with Windows 11 Home, and the disk size should be 1TB.", "web": "https://www.amazon.com/"}
 {"web_name": "Amazon", "id": "Amazon--3", "ques": "Find climbing gears and sort the results by price high to low. Answer the first 3 results after sorting.", "web": "https://www.amazon.com/"}
 {"web_name": "Amazon", "id": "Amazon--4", "ques": "Find the used Nintendo Switch Lite on Amazon then filter by 'Used - Good', tell me the cheapest one that is 'Used - Good'.", "web": "https://www.amazon.com/"}
-{"web_name": "Amazon", "id": "Amazon--5", "ques": "Find a Blue iPhone 14 Pro 128gb and add to cart.", "web": "https://www.amazon.com/"}
+{"web_name": "Amazon", "id": "Amazon--5", "ques": "Find a Blue iPhone 12 Pro 128gb and add to cart.", "web": "https://www.amazon.com/"}
 {"web_name": "Amazon", "id": "Amazon--6", "ques": "Browse black strollers within $100 to $200 on Amazon. Then find one Among these black strollers with over 20,000 reviews and a rating greater than 4 star.", "web": "https://www.amazon.com/"}
 {"web_name": "Amazon", "id": "Amazon--7", "ques": "Browse the women's hiking boots on Amazon and filter the results to show only those that are waterproof and have a rating of at least 4 stars and size 6.", "web": "https://www.amazon.com/"}
 {"web_name": "Amazon", "id": "Amazon--8", "ques": "Find the cheapest Samsung-made Android tablet with screen between 10-10.9 inches on Amazon. Only answer the cheapest one.", "web": "https://www.amazon.com/"}

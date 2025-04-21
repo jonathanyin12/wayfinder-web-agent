@@ -7,13 +7,14 @@
     },
     "Amazon": {
         "Amazon--4": "Used - Good filter does not exist",
+        "Amazon--6": "No product matches the criteria",
         "Amazon--19": "No product matches the criteria"
     },
     "Apple": {
         "Apple--1": "IOS 17 page redirects to IOS 18",
         "Apple--7": "Apple Vision Pro already released",
         "Apple--9": "Requires making an actual booking",
-        "Apple--42": "Vague task"
+        "Apple--42": "Vague task/no information exists"
     },
     "BBC News": {
         "BBC News--2": "No such article in the last 2 days",
