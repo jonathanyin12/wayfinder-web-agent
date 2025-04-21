@@ -196,48 +196,69 @@ async def main():
     # Create a semaphore to limit concurrent requests
     semaphore = asyncio.Semaphore(20)
 
+    from collections import defaultdict
+
     from tqdm.asyncio import tqdm_asyncio
 
     async def process_task(file_dir, client, api_model, max_attached_imgs):
         async with semaphore:
             return await auto_eval(file_dir, client, api_model, max_attached_imgs)
 
+    all_tasks = []
+    # Collect all tasks that need to be run across all websites
+    print("Collecting tasks...")
     for web in webs:
-        web_task_res = []
-        web_cost = 0  # Track cost per website
-        tasks = []
-
-        # Collect all tasks that need to be run
         for idx in range(0, 46):
             file_dir = os.path.join(args.output_dir, web + "--" + str(idx))
             metadata_file = os.path.join(file_dir, "metadata.json")
             if os.path.exists(metadata_file):
-                with open(metadata_file) as fr:
-                    metadata = json.load(fr)
-
-                # Skip if the auto evaluation result is already in the metadata
-                if "auto_eval" not in metadata:
-                    task = process_task(
-                        file_dir, client, args.api_model, args.max_attached_imgs
+                try:
+                    with open(metadata_file) as fr:
+                        metadata = json.load(fr)
+                    # Skip if the auto evaluation result is already in the metadata
+                    if "auto_eval" not in metadata:
+                        task = process_task(
+                            file_dir, client, args.api_model, args.max_attached_imgs
+                        )
+                        all_tasks.append(
+                            {"task": task, "file_dir": file_dir, "web": web}
+                        )
+                except json.JSONDecodeError:
+                    print(
+                        f"Warning: Could not decode JSON from {metadata_file}. Skipping."
                     )
-                    tasks.append((task, file_dir))
+                except Exception as e:
+                    print(f"Warning: Error processing {file_dir}: {e}. Skipping.")
 
-        # Run all tasks concurrently
-        if tasks:
-            results = await tqdm_asyncio.gather(
-                *(task for task, _ in tasks), desc=f"Processing {web}"
-            )
+    results_by_web = defaultdict(list)
+    costs_by_web = defaultdict(float)
 
-            # Process results
-            for (verdict, reasoning, cost), (_, file_dir) in zip(results, tasks):
-                web_task_res.append(verdict)
-                web_cost += cost
-                total_cost += cost
+    # Run all tasks concurrently if any tasks were collected
+    if all_tasks:
+        print(f"Running {len(all_tasks)} tasks concurrently...")
+        results = await tqdm_asyncio.gather(
+            *(item["task"] for item in all_tasks), desc="Processing all tasks"
+        )
 
-        if web_task_res:
+        # Process results and aggregate by website
+        for result_data, task_info in zip(results, all_tasks):
+            verdict, reasoning, cost = result_data
+            web = task_info["web"]
+            results_by_web[web].append(verdict)
+            costs_by_web[web] += cost
+            total_cost += cost
+    else:
+        print("No tasks to run.")
+
+    # Print results per website
+    print("\n--- Evaluation Results ---")
+    for web in webs:
+        if web in results_by_web:
             print(f"\n{web} results:")
-            print(f"Total cost: ${web_cost:.4f}")
-            print(web_task_res)
+            print(f"Total cost: ${costs_by_web[web]:.4f}")
+            print(results_by_web[web])
+        else:
+            print(f"\n{web}: No new tasks were processed.")
 
     print(f"\nTotal cost for all evaluations: ${total_cost:.4f}")
 
