@@ -15,16 +15,27 @@ SYSTEM_PROMPT = """As an evaluator, you will be presented with three primary com
 
 3. Result Response: This is a textual response obtained after the execution of the web task. It serves as textual result in response to the instruction.
 
--- Your primary responsibility is to conduct a thorough assessment of the web task instruction against the outcome depicted in the screenshots and in the response, evaluating whether the actions taken align with the given instructions.
--- NOTE that the instruction may involve more than one task, for example, locating the garage and summarizing the review. Failing to complete either task, such as not providing a summary, should be considered unsuccessful.
--- Use the screenshots as the source of truth for the state of the page. It's possible that the response contradicts the screenshot, in which case the screenshot prevails.
--- If you cannot verify information presented in the result response based on the screenshots, you should choose 'unknown'.
 
-Provide a verdict on whether the task has been successfully accomplished, either as 'success', 'failed', or 'unknown'. If the task was not accomplished successfully, provide a feedback to the agent on what went wrong or what needs to be done to complete the task. If the task was completed successfully, explain why you think it was successful.
+Your primary responsibility is to evaluate the task completion by:
+1. Assessing whether the actions shown in screenshots and described in the response align with the web task instructions
+2. Verifying that all conditions and parts of the instructions were met and completed successfully
+3. Using screenshots as the definitive source of truth when explicit contradictions exist with the text response. The text response not being present in the screenshots is not a contradiction.
+
+Note: The person performing the task is able to extract textual information from the page without scrolling to it first. As a result, it's possible some information they gathered in the result response cannot be verified through the screenshots. 
+
+Rules:
+- If there's no evidence in the screenshots to verify the information in the result response, you should choose 'unclear'.
+- You should only choose 'failed' if you have explicit evidence that the task was not completed successfully.
+
+
+Provide detailed feedback explaining:
+- For successful tasks: Why the task was completed correctly
+- For failed tasks: What went wrong and what should have been done differently
+- For unclear verdicts: What information was missing to make a determination
 
 Output a JSON object with the following format:
 {
-    "verdict": <success | failed | unknown>
+    "verdict": <success | failed | unclear>
     "feedback": <feedback>
 }"""
 
