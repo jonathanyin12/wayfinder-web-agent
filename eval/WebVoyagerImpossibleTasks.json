@@ -34,6 +34,10 @@
         "Coursera--17": "'Credit Eligible' filter does not exist",
         "Coursera--28": "No such course exists"
     },
+    "Github": {
+        "Github--20": "Github Copilot chat has already been released on mobile",
+        "Github--22": "No such repository exists currently"
+    },
     "Google Flights": {
         "Google Flights--0": "Requires making an actual booking",
         "Google Flights--20": "Requires making an actual booking"
@@ -54,6 +58,7 @@
         "Huggingface--21": "Default Model information does not exist in the documentation",
         "Huggingface--22": "PyTorch to TensorFlow information removed from the latest documentation",
         "Huggingface--23": "HuggingFace does not allow sorting by both downloads and recently created",
-        "Huggingface--32": "Temperature parameter setting not available."
+        "Huggingface--32": "Temperature parameter setting not available.",
+        "Huggingface--34": "HuggingFace classroom is no longer active"
     }
 }
