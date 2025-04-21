@@ -23,6 +23,10 @@ PRICING = {
         "prompt_tokens": 2.5 / 1000000,
         "completion_tokens": 10 / 1000000,
     },
+    "gpt-4.1-mini": {
+        "prompt_tokens": 0.4 / 1000000,
+        "completion_tokens": 1.6 / 1000000,
+    },
     "gpt-4.1": {
         "prompt_tokens": 2 / 1000000,
         "completion_tokens": 8 / 1000000,
@@ -43,8 +47,7 @@ PRICING = {
 
 
 class LLMClient:
-    # Class-level dictionary to track token usage globally across all instances
-    token_usage = {}
+    global_token_usage = {}
 
     def __init__(self):
         self.client = AsyncAzureOpenAI(
@@ -52,6 +55,7 @@ class LLMClient:
             azure_endpoint="https://jonathan-research.openai.azure.com",
         )
         self.max_retries = 3
+        self.token_usage = {}
 
     async def make_call(
         self,
@@ -59,7 +63,7 @@ class LLMClient:
         model: str,
         tools: Optional[List[Dict[str, Any]]] = None,
         attempt: int = 0,
-        timeout: int = 120,
+        timeout: int = 60,
         json_format: bool = True,
         reasoning_effort: Optional[Literal["low", "medium", "high"]] = "high",
     ) -> ChatCompletionMessage:
@@ -82,8 +86,15 @@ class LLMClient:
             ).chat.completions.create(model=model, messages=messages, **kwargs)
 
             # Track token usage by model
-            if model not in LLMClient.token_usage:
-                LLMClient.token_usage[model] = {
+            if model not in self.token_usage:
+                self.token_usage[model] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                }
+
+            if model not in LLMClient.global_token_usage:
+                LLMClient.global_token_usage[model] = {
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
                     "total_tokens": 0,
@@ -91,33 +102,53 @@ class LLMClient:
 
             # Update token counts
             usage = response.usage
-            LLMClient.token_usage[model]["prompt_tokens"] += usage.prompt_tokens
-            LLMClient.token_usage[model]["completion_tokens"] += usage.completion_tokens
-            LLMClient.token_usage[model]["total_tokens"] += usage.total_tokens
+            self.token_usage[model]["prompt_tokens"] += usage.prompt_tokens
+            self.token_usage[model]["completion_tokens"] += usage.completion_tokens
+            self.token_usage[model]["total_tokens"] += usage.total_tokens
+
+            LLMClient.global_token_usage[model]["prompt_tokens"] += usage.prompt_tokens
+            LLMClient.global_token_usage[model]["completion_tokens"] += (
+                usage.completion_tokens
+            )
+            LLMClient.global_token_usage[model]["total_tokens"] += usage.total_tokens
 
             return response.choices[0].message
         except Exception as e:
             if attempt >= self.max_retries - 1:
                 raise Exception(f"Failed after {self.max_retries} attempts: {str(e)}")
-            print(f"Attempt {attempt + 1} failed with error: {str(e)}")
+            print(
+                f"Attempt {attempt + 1} failed with error: {str(e)}. Model: {model}, Timeout: {timeout}"
+            )
             return await self.make_call(
                 messages, model, tools, attempt + 1, timeout, json_format
             )
 
-    @classmethod
-    def get_token_usage(cls) -> Dict[str, Dict[str, int]]:
+    def get_token_usage(self) -> Dict[str, Dict[str, int]]:
         """Get the current token usage statistics for all models
 
         Returns:
             A dictionary with token usage statistics by model
         """
-        return cls.token_usage
+        return self.token_usage
 
-    @classmethod
-    def print_token_usage(cls) -> None:
+    def get_total_cost(self) -> float:
+        """Get the total cost of all token usage"""
+        return sum(
+            usage["prompt_tokens"] * PRICING[model]["prompt_tokens"]
+            + usage["completion_tokens"] * PRICING[model]["completion_tokens"]
+            for model, usage in self.token_usage.items()
+        )
+
+    def print_token_usage(self, global_usage: bool = False) -> None:
         """Print the current token usage statistics for all models"""
         print("\n=== TOKEN USAGE STATISTICS ===")
-        for model, usage in cls.token_usage.items():
+
+        if global_usage:
+            token_usage = LLMClient.global_token_usage
+        else:
+            token_usage = self.token_usage
+
+        for model, usage in token_usage.items():
             print(f"Model: {model}")
             print(f"  Prompt tokens: {usage['prompt_tokens']}")
             print(f"  Completion tokens: {usage['completion_tokens']}")
@@ -129,7 +160,7 @@ class LLMClient:
         total_cost = sum(
             usage["prompt_tokens"] * PRICING[model]["prompt_tokens"]
             + usage["completion_tokens"] * PRICING[model]["completion_tokens"]
-            for model, usage in cls.token_usage.items()
+            for model, usage in token_usage.items()
         )
         print(f"Total cost: ${total_cost:.6f}")
 
@@ -155,7 +186,11 @@ class LLMClient:
             Union[
                 ChatCompletionContentPartTextParam, ChatCompletionContentPartImageParam
             ]
-        ] = [ChatCompletionContentPartTextParam(type="text", text=text_content)]
+        ] = []
+        if text_content:
+            content.append(
+                ChatCompletionContentPartTextParam(type="text", text=text_content)
+            )
         if detail is None:
             details: List[Literal["auto", "low", "high"]] = ["high"] * len(images)
         else:

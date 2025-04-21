@@ -6,21 +6,20 @@ import asyncio
 import base64
 import io
 import json
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from playwright.async_api import Page
 
 from agent.browser.utils.dom_utils.load_js_file import load_js_file
 from agent.browser.utils.screenshot import take_element_screenshot, take_screenshot
 from agent.llm.client import LLMClient
 
-llm_client = LLMClient()
-
 
 async def preprocess_page(
-    page: Page, output_dir: str
+    page: Page, output_dir: str, llm_client: LLMClient
 ) -> Tuple[str, str, Dict[int, Dict[str, str]]]:
     """
     Preprocess the page and return the screenshot, bounding box screenshot, and element descriptions.
@@ -45,13 +44,19 @@ async def preprocess_page(
         save_path=f"{output_dir}/bounding_box_screenshots/{timestamp}.png",
     )
     await clear_bounding_boxes(page)
+    # start_time = time.time()
     # elements = await get_element_descriptions(
-    #     page, element_simplified_htmls, output_dir
+    #     page, element_simplified_htmls, screenshot_base64, output_dir, llm_client
     # )
+    # end_time = time.time()
+    # print(
+    #     f"Time taken to get {len(elements)} element descriptions: {end_time - start_time} seconds"
+    # )
+
     elements = {
         element_id: {
             "simplified_html": element_simplified_htmls[element_id],
-            "description": element_simplified_htmls[element_id],
+            # "description": element_simplified_htmls[element_id],
         }
         for element_id in element_simplified_htmls
     }
@@ -202,17 +207,6 @@ async def draw_bounding_boxes(page: Page, indices: List[int]) -> int:
     return await page.evaluate(draw_bounding_boxes_js, indices)
 
 
-async def draw_bounding_box_around_element(page: Page, element_id: int) -> None:
-    """
-    Draw a bounding box around the element with the specified index.
-
-    Args:
-        page: The Playwright page
-        element_id: The unique GWA ID of the element to annotate
-    """
-    await draw_bounding_boxes(page, [element_id])
-
-
 async def clear_bounding_boxes(page: Page) -> None:
     """
     Clear any bounding boxes from the page.
@@ -229,7 +223,7 @@ async def clear_bounding_boxes(page: Page) -> None:
 
 
 async def get_element_descriptions(
-    page, element_simplified_htmls, output_dir
+    page, element_simplified_htmls, screenshot_base64, output_dir, llm_client
 ) -> Dict[int, Dict[str, str]]:
     """
     Get descriptions for all annotated elements on the page in parallel.
@@ -238,26 +232,37 @@ async def get_element_descriptions(
         A dictionary mapping element IDs to their descriptions and simplified HTML
     """
 
-    # Process all elements in parallel
+    # Process all elements in parallel with a semaphore to limit concurrent calls
     tasks = []
+    # Limit to 20 concurrent calls
+    semaphore = asyncio.Semaphore(20)
+
+    async def get_element_description_with_semaphore(
+        page, element_id, simplified_html, screenshot_base64, output_dir, llm_client
+    ):
+        async with semaphore:
+            return await get_element_description(
+                page,
+                element_id,
+                simplified_html,
+                screenshot_base64,
+                output_dir,
+                llm_client,
+            )
 
     for element_id, simplified_html in element_simplified_htmls.items():
-        await draw_bounding_box_around_element(page, element_id)
-        page_screenshot_base64 = await take_screenshot(
-            page,
-        )
-        await clear_bounding_boxes(page)
-
-        # Create the task
-        task = get_element_description(
+        # Create the task with semaphore control
+        task = get_element_description_with_semaphore(
             page,
             element_id,
             simplified_html,
-            page_screenshot_base64,
+            screenshot_base64,
+            output_dir,
+            llm_client,
         )
         tasks.append((element_id, task))
 
-    # Execute all tasks concurrently
+    # Execute all tasks concurrently with semaphore limiting to 20 at a time
     results = await asyncio.gather(*[task for _, task in tasks])
 
     # Map results to element IDs
@@ -275,85 +280,89 @@ async def get_element_description(
     page: Page,
     element_id: str,
     simplified_html: str,
-    page_screenshot: str,
-    save_path: Optional[str] = None,
+    screenshot_base64: str,
+    output_dir: str,
+    llm_client: LLMClient,
 ) -> str:
     """
     Get a description for a single element on the page.
     """
-    element_screenshot = await take_element_screenshot(
-        page,
-        element_id,
-        save_path=save_path,
+
+    # Get the element bounding box coordinates
+    selector = f'[data-gwa-id="gwa-element-{element_id}"]'
+    element_handle = await page.query_selector(selector)
+    if not element_handle:
+        return "Element not found"
+
+    bounding_box = await element_handle.bounding_box()
+    if not bounding_box:
+        return "Element has no bounding box"
+
+    # Manually draw the bounding box on the screenshot using PIL
+    image_data = base64.b64decode(screenshot_base64)
+    image = Image.open(io.BytesIO(image_data))
+    draw = ImageDraw.Draw(image)
+    # Add a small buffer around the bounding box for better visibility
+    buffer = 10
+    draw.rectangle(
+        [
+            max(0, bounding_box["x"] - buffer),
+            max(0, bounding_box["y"] - buffer),
+            bounding_box["x"] + bounding_box["width"] + buffer,
+            bounding_box["y"] + bounding_box["height"] + buffer,
+        ],
+        outline="red",
+        width=5,
     )
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
 
-    if not element_screenshot:
-        raise ValueError("No element screenshot")
+    page_screenshot_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    prompt = f"""Describe the element and it's purpose in the screenshot:
+    prompt = f"""Task: Describe the function of the UI element in the screenshot.
 
-The first screenshot is the entire page with the element highlighted with a red bounding box.
-The second screenshot is the element in question.
+The first screenshot is the entire page with the element outlined with a red bounding box.
 
 The element has the following HTML:
 {simplified_html}
 
 
-Output a very brief description of the element and it's purpose. Provide additional context about the element if necessary e.g. if there are multiple elements that look similar, describe the differences.
+Provide additional context about the element if necessary e.g. if there are multiple identical elements, say what the element is associated with.
 
-Example outputs:
-'Add to Cart' button for the 13 inch MacBook Pro
-Empty search bar at the top of the page
-Link to the privacy policy
-Button to select the color 'blue'.
 
-Consider the context of the page when describing the element. For instance, if the element is a selector and has an outline around it, it is most likely selected.
+Output your response in JSON format:
+{{
+  "description": "string | a few words describing the element and its function. Include any disambiguating information if there are multiple elements that look similar.",
+}}
 """
 
     user_message = llm_client.create_user_message_with_images(
-        prompt, [page_screenshot, element_screenshot], "low"
+        prompt, [page_screenshot_base64], "high"
     )
     response = await llm_client.make_call(
-        [user_message], "gpt-4o", timeout=10, json_format=False
+        [user_message],
+        "gpt-4.1-mini",
+        timeout=30,
+        json_format=True,
     )
+
     if not response.content:
         return simplified_html
 
-    return response.content
+    json_response = json.loads(response.content)
+
+    output = f"{json_response['description']} "
+
+    return output
 
 
-async def get_page_overview(page: Page, full_page_screenshot: str) -> Tuple[str, str]:
+async def get_page_overview(
+    page: Page, full_page_screenshot_crops: List[str], llm_client: LLMClient
+) -> Tuple[str, str]:
     """
     Get a brief overview of the page.
     """
     # Convert base64 screenshot to PIL Image
-    image_data = base64.b64decode(full_page_screenshot)
-    image = Image.open(io.BytesIO(image_data))
-
-    # Get dimensions
-    width, height = image.size
-
-    # Define the crop height
-    crop_height = 1600
-
-    # Calculate number of crops needed
-    num_crops = (height + crop_height - 1) // crop_height  # Ceiling division
-
-    num_crops = min(num_crops, 10)
-    # Create crops
-    crops = []
-    for i in range(num_crops):
-        top = i * crop_height
-        bottom = min(top + crop_height, height)
-
-        # Crop the image
-        crop = image.crop((0, top, width, bottom))
-
-        # Convert back to base64
-        buffered = io.BytesIO()
-        crop.save(buffered, format="PNG")
-        crop_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        crops.append(crop_base64)
 
     page_title = await page.title()
 
@@ -374,8 +383,12 @@ Output your response in JSON format.
     "detailed_breakdown": <Answer to task 2 in markdown format>,
 }}"""
 
-    user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
-    response = await llm_client.make_call([user_message], "gpt-4.1", json_format=True)
+    user_message = llm_client.create_user_message_with_images(
+        prompt, full_page_screenshot_crops[:-20], "high"
+    )
+    response = await llm_client.make_call(
+        [user_message], "gpt-4.1-mini", json_format=True
+    )
 
     if not response.content:
         raise ValueError("No response from the LLM")

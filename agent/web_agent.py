@@ -21,8 +21,11 @@ class WebAgent:
             output_dir or f"runs/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
         os.makedirs(self.output_dir, exist_ok=True)
-        self.browser = AgentBrowser(initial_url, self.output_dir, headless)
         self.llm_client = LLMClient()
+
+        self.browser = AgentBrowser(
+            initial_url, self.output_dir, headless, self.llm_client
+        )
 
     async def run(self):
         await self.browser.launch()
@@ -55,6 +58,7 @@ class WebAgent:
         execution_time,
     ):
         token_usage = self.llm_client.get_token_usage()
+        total_cost = self.llm_client.get_total_cost()
         prettified_message_history = self.llm_client.format_message_history(
             message_history
         )
@@ -67,6 +71,7 @@ class WebAgent:
                     "final_response": final_response,
                     "execution_time": execution_time,
                     "token_usage": token_usage,
+                    "run_cost": total_cost,
                     "primary_model": model,
                     "message_history": prettified_message_history,
                 },

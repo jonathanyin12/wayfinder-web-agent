@@ -64,7 +64,7 @@ async def main(max_concurrent_tasks: int, output_dir: str) -> None:
     # randomize the order of tasks
     random.seed(42)
     random.shuffle(tasks)
-    tasks = tasks[:10]
+    tasks = tasks[:50]
     print(f"Running {len(tasks)} tasks")
 
     async def run_task_with_semaphore(
@@ -73,6 +73,8 @@ async def main(max_concurrent_tasks: int, output_dir: str) -> None:
         output_dir: str,
     ) -> None:
         async with semaphore:
+            # Add random delay before starting the task so that the tasks are staggered
+            await asyncio.sleep(random.uniform(0, 10))
             await run_task(task, output_dir)
 
     all_tasks = []
@@ -92,8 +94,8 @@ if __name__ == "__main__":
         parser.add_argument(
             "--max-concurrent",
             type=int,
-            default=5,
-            help="Maximum number of concurrent tasks (default: 3)",
+            default=10,
+            help="Maximum number of concurrent tasks",
         )
         parser.add_argument(
             "--output-dir",

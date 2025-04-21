@@ -1,10 +1,13 @@
 import asyncio
+import base64
+import io
 import json
 import logging
 from datetime import datetime
-from typing import Any, Tuple
+from typing import Any, List, Tuple
 from urllib.parse import urlparse
 
+from PIL import Image
 from playwright.async_api import Page
 
 from agent.browser.utils.preprocess_page import get_page_overview, preprocess_page
@@ -68,10 +71,21 @@ class AgentBrowserPage:
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 if not self.page:
                     raise RuntimeError("Browser page is not initialized")
-                if name == "scroll_to_content":
+                if name == "find":
                     return await action_func(
                         page=self.page,
-                        full_page_screenshot=self.full_page_screenshot,
+                        full_page_screenshot_crops=self.get_full_page_screenshot_crops(),
+                        page_height=Image.open(
+                            io.BytesIO(base64.b64decode(self.full_page_screenshot))
+                        ).height,
+                        llm_client=self.llm_client,
+                        *args,
+                        **kwargs,
+                    )
+                elif name == "extract":
+                    return await action_func(
+                        page=self.page,
+                        llm_client=self.llm_client,
                         *args,
                         **kwargs,
                     )
@@ -99,8 +113,13 @@ class AgentBrowserPage:
                 self.page, save_path=save_path, full_page=True
             )
             self.full_page_screenshot = full_page_screenshot
+            full_page_screenshot_crops = self.get_full_page_screenshot_crops()
             tasks.append(
-                asyncio.create_task(get_page_overview(self.page, full_page_screenshot))
+                asyncio.create_task(
+                    get_page_overview(
+                        self.page, full_page_screenshot_crops, self.llm_client
+                    )
+                )
             )
 
         tasks.append(
@@ -108,6 +127,7 @@ class AgentBrowserPage:
                 preprocess_page(
                     self.page,
                     self.output_dir,
+                    self.llm_client,
                 )
             )
         )
@@ -261,3 +281,34 @@ Respond with a JSON object:
         #     await self.page.wait_for_load_state("networkidle", timeout=5000)
         # except Exception as e:
         #     logger.warning(f"Error waiting for networkidle: {e}")
+
+    def get_full_page_screenshot_crops(self) -> List[str]:
+        image_data = base64.b64decode(self.full_page_screenshot)
+        image = Image.open(io.BytesIO(image_data))
+
+        # Get dimensions
+        width, height = image.size
+
+        # Define the crop height
+        crop_height = 1600
+
+        # Calculate number of crops needed
+        num_crops = (height + crop_height - 1) // crop_height  # Ceiling division
+
+        num_crops = min(num_crops, 10)
+        # Create crops
+        crops = []
+        for i in range(num_crops):
+            top = i * crop_height
+            bottom = min(top + crop_height, height)
+
+            # Crop the image
+            crop = image.crop((0, top, width, bottom))
+
+            # Convert back to base64
+            buffered = io.BytesIO()
+            crop.save(buffered, format="PNG")
+            crop_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            crops.append(crop_base64)
+
+        return crops

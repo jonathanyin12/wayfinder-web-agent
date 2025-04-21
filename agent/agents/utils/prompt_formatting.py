@@ -17,12 +17,18 @@ def get_formatted_interactable_elements(pixels_above, pixels_below, elements) ->
         A formatted string representation of interactable elements
     """
     element_descriptions = {
-        element_id: element["description"] for element_id, element in elements.items()
+        element_id: element["simplified_html"]
+        for element_id, element in elements.items()
     }
     has_content_above = pixels_above > 0
     has_content_below = pixels_below > 0
 
-    elements_text = json.dumps(element_descriptions, indent=4)
+    # Format the elements in a more readable way
+    elements_text = ""
+    if element_descriptions:
+        for element_id, html in element_descriptions.items():
+            elements_text += f"- Element {element_id}: {html}\n"
+        elements_text = elements_text.rstrip()  # Remove trailing newline
     if elements_text:
         if has_content_above:
             elements_text = f"... {pixels_above} pixels above - scroll up to see more ...\n{elements_text}"

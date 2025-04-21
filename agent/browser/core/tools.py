@@ -22,7 +22,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "type_text",
-            "description": "Type text into an element on the page.",
+            "description": "Click on a text box and type text into it. This will automatically clear the text box before typing.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -34,12 +34,8 @@ TOOLS = [
                         "type": "string",
                         "description": "The text to type into the element.",
                     },
-                    "submit": {
-                        "type": "boolean",
-                        "description": "Whether to submit the text after typing it. Set to true when the input field requires form submission (like search boxes or login forms). Set to false when you want to type without submitting (like filling out multiple fields before submission).",
-                    },
                 },
-                "required": ["element_id", "text", "submit"],
+                "required": ["element_id", "text"],
                 "additionalProperties": False,
             },
             "strict": True,
@@ -72,8 +68,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "scroll_to_content",
-            "description": "Scroll to find content on the page.",
+            "name": "find",
+            "description": "Search the page for specific content and automatically scrolls to its location if found. Provide as much context/detail as possible about what you are looking for.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -92,7 +88,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "extract",
-            "description": "Finds and extracts specific textual information from the current page based on a descriptive query. Use this tool when you need particular pieces of information (e.g., a price, a name, a summary paragraph) rather than interacting with elements.",
+            "description": "Performs OCR and extracts textual information from the current page based on a descriptive query of what you are looking for.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -168,8 +164,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "end_task",
-            "description": "Declare that you have completed the task.",
+            "name": "submit_for_evaluation",
+            "description": "Indicate that you believe the task is complete and ready for evaluation. An external reviewer will assess and provide feedback if any aspects of the task remain incomplete.",
             "parameters": {
                 "type": "object",
                 "properties": {},
