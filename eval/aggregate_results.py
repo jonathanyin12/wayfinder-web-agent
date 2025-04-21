@@ -36,7 +36,7 @@ def load_task_data(data_file: str) -> Dict[str, Dict[str, Any]]:
 
 def analyze_results(
     results_dir: str,
-) -> Tuple[Dict[str, Dict[str, Any]], List[str], int, int, float]:
+) -> Tuple[Dict[str, Dict[str, Any]], List[str], List[str], List[str], int, int, float]:
     """Analyze evaluation results for all websites."""
     # List of websites to analyze
     webs = [
@@ -57,11 +57,13 @@ def analyze_results(
         "Wolfram Alpha",
     ]
 
-    # Initialize counters
+    # Initialize counters and lists
     total_tasks = 0
-    successful_tasks = 0
+    successful_tasks_count = 0
     web_success_rates = {}
+    all_successful_tasks = []
     all_failed_tasks = []
+    all_unclear_tasks = []  # Fix: Initialize list
     total_cost = 0
 
     # Analyze results for each website
@@ -70,7 +72,7 @@ def analyze_results(
         web_successful_tasks = 0
         successful_file_dirs = []
         failed_file_dirs = []
-
+        unclear_file_dirs = []
         # Check each possible task ID
         for idx in range(0, 46):
             task_id = f"{web}--{idx}"
@@ -92,11 +94,17 @@ def analyze_results(
                     verdict = auto_eval_res.get("verdict", "unknown")
                     if verdict == "success":
                         web_successful_tasks += 1
-                        successful_tasks += 1
+                        successful_tasks_count += 1
                         successful_file_dirs.append(file_dir)
-                    else:
+                        all_successful_tasks.append(
+                            task_id
+                        )  # Track successful task IDs
+                    elif verdict == "failed":
                         failed_file_dirs.append(file_dir)
                         all_failed_tasks.append(task_id)
+                    else:  # Includes 'unknown' or any other verdict
+                        unclear_file_dirs.append(file_dir)
+                        all_unclear_tasks.append(task_id)  # Track unclear task IDs
 
         # Calculate success rate for this website
         if web_total_tasks > 0:
@@ -107,6 +115,7 @@ def analyze_results(
                 "total_tasks": web_total_tasks,
                 "successful_file_dirs": successful_file_dirs,
                 "failed_file_dirs": failed_file_dirs,
+                "unclear_file_dirs": unclear_file_dirs,  # Store unclear file dirs
             }
             print(
                 f"{web} Success Rate: {web_success_rate:.2f}% ({web_successful_tasks}/{web_total_tasks} tasks)"
@@ -114,28 +123,33 @@ def analyze_results(
 
     return (
         web_success_rates,
+        all_successful_tasks,
         all_failed_tasks,
-        successful_tasks,
+        all_unclear_tasks,
+        successful_tasks_count,
         total_tasks,
         total_cost,
     )
 
 
-def save_failed_tasks(
-    results_dir: str, all_failed_tasks: List[str], task_dict: Dict[str, Dict[str, Any]]
+def save_tasks_by_status(
+    results_dir: str,
+    task_ids: List[str],
+    task_dict: Dict[str, Dict[str, Any]],
+    output_filename: str,
 ) -> str:
-    """Save details of failed tasks to a JSONL file."""
-    failed_tasks_details = []
-    for task_id in all_failed_tasks:
+    """Save details of tasks with a specific status to a JSONL file."""
+    tasks_details = []
+    for task_id in task_ids:
         if task_id in task_dict:
-            failed_tasks_details.append(task_dict[task_id])
+            tasks_details.append(task_dict[task_id])
         else:
             print(f"Warning: Task ID {task_id} not found in WebVoyager data")
 
-    # Save failed tasks to a JSONL file
-    output_path = os.path.join(results_dir, "failed_tasks.jsonl")
+    # Save tasks to a JSONL file
+    output_path = os.path.join(results_dir, output_filename)
     with open(output_path, "w") as f:
-        for task in failed_tasks_details:
+        for task in tasks_details:
             f.write(json.dumps(task) + "\n")
 
     return output_path
@@ -144,22 +158,28 @@ def save_failed_tasks(
 def save_results_summary(
     results_dir: str,
     web_success_rates: Dict[str, Dict[str, Any]],
-    successful_tasks: int,
+    successful_tasks_count: int,
     total_tasks: int,
+    all_successful_tasks: List[str],
     all_failed_tasks: List[str],
+    all_unclear_tasks: List[str],
     total_cost: float,
 ) -> str:
     """Create and save a summary of the results to a text file."""
-    success_rate = (successful_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    success_rate = (
+        (successful_tasks_count / total_tasks * 100) if total_tasks > 0 else 0
+    )
 
     summary_path = os.path.join(results_dir, "results_summary.txt")
     with open(summary_path, "w") as f:
         f.write("WebVoyager Evaluation Results Summary\n")
         f.write("===================================\n\n")
         f.write(
-            f"Overall Success Rate: {success_rate:.2f}% ({successful_tasks}/{total_tasks} tasks)\n"
+            f"Overall Success Rate: {success_rate:.2f}% ({successful_tasks_count}/{total_tasks} tasks)\n"
         )
-        f.write(f"Total failed tasks: {len(all_failed_tasks)}\n\n")
+        f.write(f"Total successful tasks: {len(all_successful_tasks)}\n")
+        f.write(f"Total failed tasks: {len(all_failed_tasks)}\n")
+        f.write(f"Total unclear tasks: {len(all_unclear_tasks)}\n\n")
 
         f.write("Success Rates by Website:\n")
         f.write("------------------------\n")
@@ -184,31 +204,55 @@ def main() -> None:
     args = parse_arguments()
 
     # Load WebVoyager data to get task details
-
     task_dict = load_task_data("eval/WebVoyager_data.jsonl")
 
     # Analyze results
-    web_success_rates, all_failed_tasks, successful_tasks, total_tasks, total_cost = (
-        analyze_results(args.results_dir)
-    )
+    (
+        web_success_rates,
+        all_successful_tasks,
+        all_failed_tasks,
+        all_unclear_tasks,
+        successful_tasks_count,
+        total_tasks,
+        total_cost,
+    ) = analyze_results(args.results_dir)
 
-    # Calculate and display the overall success rate
-    success_rate = (successful_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    # Calculate and display the overall success rate and counts
+    success_rate = (
+        (successful_tasks_count / total_tasks * 100) if total_tasks > 0 else 0
+    )
     print(
-        f"\nOverall Success Rate: {success_rate:.2f}% ({successful_tasks}/{total_tasks} tasks)"
+        f"\nOverall Success Rate: {success_rate:.2f}% ({successful_tasks_count}/{total_tasks} tasks)"
     )
+    print(f"Total successful tasks: {len(all_successful_tasks)}")
     print(f"Total failed tasks: {len(all_failed_tasks)}")
+    print(f"Total unclear tasks: {len(all_unclear_tasks)}")
 
-    # Save failed tasks details
-    output_path = save_failed_tasks(args.results_dir, all_failed_tasks, task_dict)
-    print(f"Saved {len(all_failed_tasks)} failed tasks to {output_path}")
+    # Save tasks details by status
+    successful_path = save_tasks_by_status(
+        args.results_dir, all_successful_tasks, task_dict, "successful_tasks.jsonl"
+    )
+    print(f"Saved {len(all_successful_tasks)} successful tasks to {successful_path}")
+
+    failed_path = save_tasks_by_status(
+        args.results_dir, all_failed_tasks, task_dict, "failed_tasks.jsonl"
+    )
+    print(f"Saved {len(all_failed_tasks)} failed tasks to {failed_path}")
+
+    unclear_path = save_tasks_by_status(
+        args.results_dir, all_unclear_tasks, task_dict, "unclear_tasks.jsonl"
+    )
+    print(f"Saved {len(all_unclear_tasks)} unclear tasks to {unclear_path}")
+
     # Save results summary
     summary_path = save_results_summary(
         args.results_dir,
         web_success_rates,
-        successful_tasks,
+        successful_tasks_count,
         total_tasks,
+        all_successful_tasks,
         all_failed_tasks,
+        all_unclear_tasks,
         total_cost,
     )
     print(f"Saved results summary to {summary_path}")
