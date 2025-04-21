@@ -41,11 +41,14 @@ class WebAgent:
             result,
             message_history,
             screenshot_history,
+            url_history,
             iterations,
             execution_time,
         ) = await task_executor.run()
         print(result)
-        self.save_run(result, message_history, model, iterations, execution_time)
+        self.save_run(
+            result, message_history, url_history, model, iterations, execution_time
+        )
 
         await self.browser.terminate()
 
@@ -53,6 +56,7 @@ class WebAgent:
         self,
         final_response,
         message_history,
+        url_history,
         model,
         iterations,
         execution_time,
@@ -69,6 +73,7 @@ class WebAgent:
                     "initial_url": self.browser.initial_url,
                     "iterations": iterations,
                     "final_response": final_response,
+                    "url_history": url_history,
                     "execution_time": execution_time,
                     "token_usage": token_usage,
                     "run_cost": total_cost,

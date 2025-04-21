@@ -24,7 +24,9 @@ from .task_evaluator import TaskEvaluator
 from .task_output_generator import TaskOutputGenerator
 
 # Define a type alias for the return type of the run method
-RunReturnType = Tuple[str, List[ChatCompletionMessageParam], List[str], int, float]
+RunReturnType = Tuple[
+    str, List[ChatCompletionMessageParam], List[str], List[str], int, float
+]
 
 
 def get_system_prompt(task: str) -> str:
@@ -68,6 +70,7 @@ class TaskExecutor:
             )
         ]
 
+        self.url_history: List[str] = []
         self.screenshot_history: List[str] = []
         self.include_captcha_check = False
 
@@ -162,6 +165,8 @@ class TaskExecutor:
                 current_screenshot = self.browser.current_page.screenshot
                 self.goal_screenshot_history.append(current_screenshot)
                 self.screenshot_history.append(current_screenshot)
+                if self.browser.current_page.page.url != self.url_history[-1]:
+                    self.url_history.append(self.browser.current_page.page.url)
 
                 # Evaluate goal completion
                 if action_result:
@@ -199,6 +204,7 @@ class TaskExecutor:
             self.final_response,
             self.message_history,
             self.screenshot_history,
+            self.url_history,
             self.iteration,
             self.end_time - self.start_time,
         )
@@ -209,7 +215,7 @@ class TaskExecutor:
         self.iteration = 0
         screenshot = self.browser.current_page.screenshot
         self.screenshot_history.append(screenshot)
-
+        self.url_history.append(self.browser.current_page.page.url)
         # Use GoalManager to determine the next goal
         self.goal = await self.goal_manager.determine_next_goal(self.message_history)
         self.goal_screenshot_history = [screenshot]
@@ -225,6 +231,8 @@ class TaskExecutor:
         """Execute an action, get feedback if necessary, and update message history."""
         try:
             action_result = await self.browser.execute_action(action)
+            if action_result:
+                print(f"Action result:\n{action_result}")
             return True, action_result
         except Exception as e:
             error_message = f"Error executing action '{action.description}': {e}"
