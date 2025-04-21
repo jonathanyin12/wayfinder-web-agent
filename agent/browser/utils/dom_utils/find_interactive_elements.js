@@ -9,7 +9,7 @@
 
   const elements = Array.from(
     document.querySelectorAll(
-      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='option'], [role='menuitem'], [role='tab'], [role='link']"
+      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='option'], [role='menuitem'], [role='tab'], [role='link'], [role='menuitemradio']"
     )
   );
   let element_simplified_htmls = {}; // HTML for each element index
@@ -171,7 +171,6 @@
       let simplified_html = "<" + tagName;
       const attrs = [
         // Standard Attributes
-        "id",
         "name",
         "role",
         "type", // Especially for input

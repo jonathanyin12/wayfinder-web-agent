@@ -53,14 +53,14 @@ class TaskExecutor:
         browser: AgentBrowser,
         output_dir: str,
         model: str = "gpt-4.1",
-        max_iterations: int = 25,
+        max_iterations: int = 20,
     ):
         self.task = task
         self.llm_client = llm_client
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = min(max_iterations, 25)
+        self.max_iterations = min(max_iterations, 20)
         self.model = model
         self.message_history: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
@@ -77,7 +77,7 @@ class TaskExecutor:
         self.task_completed = False
         self.final_response = None
 
-        self.include_prev_screenshots = True
+        self.include_prev_screenshots = False
 
         self.iteration = 0
 
@@ -136,10 +136,12 @@ class TaskExecutor:
                     self.task, final_response, self.screenshot_history
                 )
 
+                # Save the final response even if the task is not completed in case the evaluator is wrong
+                self.final_response = final_response
+
                 # Update state based on evaluation
                 if success:
                     self.task_completed = success
-                    self.final_response = final_response
                 else:
                     # Add the feedback to history
                     evaluation_message = (
@@ -176,7 +178,7 @@ class TaskExecutor:
         self.end_time = time.time()
         self.llm_client.print_token_usage(global_usage=True)
 
-        if not self.task_completed:
+        if not self.task_completed and self.final_response is None:
             self.final_response = (
                 f"Failed to complete task within {self.max_iterations} iterations"
             )
