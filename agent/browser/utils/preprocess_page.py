@@ -78,9 +78,54 @@ async def find_iframe_interactive_elements(
     for element in iframe_elements:
         # Check if the iframe is visible before processing its contents
         try:
+            # Check 1: Playwright's built-in visibility
             is_visible = await element.is_visible()
             if not is_visible:
+                # Optional: Log why it's skipped
+                # print(f"Skipping non-visible iframe (is_visible=False): {await element.get_attribute('src')}")
                 continue
+
+            # Check 2: Bounding box check for zero size
+            bounding_box = await element.bounding_box()
+            if (
+                not bounding_box
+                or bounding_box["width"] <= 0
+                or bounding_box["height"] <= 0
+            ):
+                # Optional: Log why it's skipped
+                # print(f"Skipping iframe with zero-size bounding box: {await element.get_attribute('src')}")
+                continue
+
+            # Check 3: Coordinate check for being outside viewport
+            viewport_size = page.viewport_size
+            if not viewport_size:
+                # Fallback or skip if viewport size is unavailable
+                print(
+                    "Warning: Viewport size not available, skipping coordinate check for iframe."
+                )
+            elif (
+                bounding_box["x"] + bounding_box["width"] < 0  # Completely left
+                or bounding_box["y"] + bounding_box["height"] < 0  # Completely above
+                or bounding_box["x"] > viewport_size["width"]  # Completely right
+                or bounding_box["y"] > viewport_size["height"]  # Completely below
+            ):
+                # Optional: Log why it's skipped
+                # print(f"Skipping iframe outside of viewport: {await element.get_attribute('src')}")
+                continue
+
+            # Check 4: Explicit check for computed display/visibility styles
+            styles = await element.evaluate(
+                "el => JSON.stringify(window.getComputedStyle(el))"
+            )
+            computed_style = json.loads(styles)
+            if (
+                computed_style.get("display") == "none"
+                or computed_style.get("visibility") == "hidden"
+            ):
+                # Optional: Log why it's skipped
+                # print(f"Skipping iframe with computed style hidden: {await element.get_attribute('src')}")
+                continue
+
         except Exception as e:
             print(f"Error checking iframe visibility: {e}")
             continue
@@ -98,17 +143,83 @@ async def find_iframe_interactive_elements(
             if not await elem.is_visible():
                 continue
 
-            text = await elem.text_content() or await elem.get_attribute("value") or ""
-            # Get the HTML of the element
+            # --- Start HTML Simplification ---
             tag_name = await elem.evaluate("el => el.tagName.toLowerCase()")
-            html = await elem.evaluate("el => el.outerHTML")
+            simplified_html = f"<{tag_name}"
 
-            # For input elements, we might want to get additional attributes
-            if tag_name == "input":
-                input_type = await elem.get_attribute("type") or ""
-                value = await elem.get_attribute("value") or ""
-                placeholder = await elem.get_attribute("placeholder") or ""
-                html = f"<{tag_name} type='{input_type}' value='{value}' placeholder='{placeholder}'>{text}</{tag_name}>"
+            attrs_to_check = [
+                # Standard Attributes
+                "name",
+                "role",
+                "type",
+                "value",
+                "placeholder",
+                "title",
+                "alt",
+                "href",
+                # Boolean State Attributes
+                "checked",
+                "selected",
+                "disabled",
+                "readonly",
+                # ARIA Attributes
+                "aria-label",
+                "aria-checked",
+                "aria-selected",
+                "aria-expanded",
+                "aria-pressed",
+                "aria-disabled",
+                "aria-current",
+                "aria-haspopup",
+            ]
+            boolean_attrs = [
+                "checked",
+                "selected",
+                "disabled",
+                "readonly",
+                "aria-checked",
+                "aria-selected",
+                "aria-expanded",
+                "aria-pressed",
+                "aria-disabled",
+                "aria-current",
+            ]
+
+            for attr in attrs_to_check:
+                attr_value = await elem.get_attribute(attr)
+                if attr_value is not None:
+                    # Represent boolean attributes consistently
+                    if attr in boolean_attrs and attr_value == "":
+                        attr_value = "true"
+
+                    # Avoid adding empty attributes unless meaningful (like value="")
+                    if attr_value != "" or attr in [
+                        "value",
+                        "alt",
+                        "placeholder",
+                        "title",
+                        "href",
+                    ]:
+                        # Truncate long attribute values
+                        if len(attr_value) > 50:
+                            attr_value = attr_value[:47] + "..."
+                        simplified_html += f' {attr}="{attr_value}"'
+
+            # Get inner text, trying common fallbacks for inputs
+            inner_text = await elem.inner_text()
+            if tag_name == "input" and not inner_text:
+                value = await elem.get_attribute("value")
+                placeholder = await elem.get_attribute("placeholder")
+                aria_label = await elem.get_attribute("aria-label")
+                title = await elem.get_attribute("title")
+                # Use the first available text source as a fallback
+                inner_text = value or placeholder or aria_label or title or ""
+
+            # Clean and add inner text
+            inner_text = " ".join(inner_text.split()) if inner_text else ""
+            # Note: JS version doesn't truncate inner text, only attributes.
+            simplified_html += f">{inner_text}</{tag_name}>"
+            # --- End HTML Simplification ---
 
             # Add a unique identifier to track this iframe element
             # Using starting_index + a unique counter for all iframe elements
@@ -118,7 +229,8 @@ async def find_iframe_interactive_elements(
             await elem.evaluate(
                 f"el => el.setAttribute('data-gwa-id', 'gwa-element-{iframe_element_id}')"
             )
-            iframes_element_simplified_htmls[iframe_element_id] = html
+            # Use the simplified HTML
+            iframes_element_simplified_htmls[iframe_element_id] = simplified_html
 
             box = await elem.bounding_box()
             if not box:
