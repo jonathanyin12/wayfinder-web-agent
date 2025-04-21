@@ -53,7 +53,7 @@ class TaskExecutor:
         browser: AgentBrowser,
         output_dir: str,
         model: str = "gpt-4.1",
-        max_iterations: int = 1,
+        max_iterations: int = 25,
     ):
         self.task = task
         self.llm_client = llm_client
@@ -96,7 +96,7 @@ class TaskExecutor:
         while self.iteration < self.max_iterations and not self.task_completed:
             print(f"Iteration {self.iteration}")
             self.iteration += 1
-            self.llm_client.print_token_usage()
+            self.llm_client.print_token_usage(global_usage=True)
             # self.llm_client.print_message_history(
             #     cast(
             #         List[ChatCompletionMessageParam | Dict[str, Any]],
@@ -174,7 +174,7 @@ class TaskExecutor:
                 )
 
         self.end_time = time.time()
-        self.llm_client.print_token_usage()
+        self.llm_client.print_token_usage(global_usage=True)
 
         if not self.task_completed:
             self.final_response = (

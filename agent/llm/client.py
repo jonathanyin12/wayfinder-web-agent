@@ -47,6 +47,8 @@ PRICING = {
 
 
 class LLMClient:
+    global_token_usage = {}
+
     def __init__(self):
         self.client = AsyncAzureOpenAI(
             api_version="2025-01-01-preview",
@@ -91,11 +93,24 @@ class LLMClient:
                     "total_tokens": 0,
                 }
 
+            if model not in LLMClient.global_token_usage:
+                LLMClient.global_token_usage[model] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                }
+
             # Update token counts
             usage = response.usage
             self.token_usage[model]["prompt_tokens"] += usage.prompt_tokens
             self.token_usage[model]["completion_tokens"] += usage.completion_tokens
             self.token_usage[model]["total_tokens"] += usage.total_tokens
+
+            LLMClient.global_token_usage[model]["prompt_tokens"] += usage.prompt_tokens
+            LLMClient.global_token_usage[model]["completion_tokens"] += (
+                usage.completion_tokens
+            )
+            LLMClient.global_token_usage[model]["total_tokens"] += usage.total_tokens
 
             return response.choices[0].message
         except Exception as e:
@@ -124,10 +139,16 @@ class LLMClient:
             for model, usage in self.token_usage.items()
         )
 
-    def print_token_usage(self) -> None:
+    def print_token_usage(self, global_usage: bool = False) -> None:
         """Print the current token usage statistics for all models"""
         print("\n=== TOKEN USAGE STATISTICS ===")
-        for model, usage in self.token_usage.items():
+
+        if global_usage:
+            token_usage = LLMClient.global_token_usage
+        else:
+            token_usage = self.token_usage
+
+        for model, usage in token_usage.items():
             print(f"Model: {model}")
             print(f"  Prompt tokens: {usage['prompt_tokens']}")
             print(f"  Completion tokens: {usage['completion_tokens']}")
@@ -139,7 +160,7 @@ class LLMClient:
         total_cost = sum(
             usage["prompt_tokens"] * PRICING[model]["prompt_tokens"]
             + usage["completion_tokens"] * PRICING[model]["completion_tokens"]
-            for model, usage in self.token_usage.items()
+            for model, usage in token_usage.items()
         )
         print(f"Total cost: ${total_cost:.6f}")
 
