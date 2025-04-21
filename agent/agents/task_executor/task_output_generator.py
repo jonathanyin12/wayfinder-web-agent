@@ -10,20 +10,21 @@ from agent.llm import LLMClient
 
 
 def get_task_output_prompt(task: str) -> str:
-    return f"""TASK 1:            
-Provide a 1-2 sentence final response to the task. If the task was not completed, briefly explain why not.
+    return f"""TASKS:   
+1. Reason about whether the task requires any information to be returned.
+
+2. Provide a final response to the task.
+- If the task was not completed, briefly explain why not.
+- If the task requires information to be returned, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
 
 As a reminder, the task is: {task}
-
-TASK 2:
-Determine if the task requires any information to be returned. If so, reference the message history to find the requested information and return it. DO NOT MAKE UP ANY INFORMATION. If information requested for the task is not present in the message history, simply state what information is missing.
             
 
 Output your response in JSON format.
 {{
-    "response": <final response to the task>,
     "reasoning": <reasoning about whether the task requires any information to be returned>,
-    "information": <Return the content requested by the task in natural language. If no information is requested, return an empty string>,
+    "requires_information": <True if the task requires information to be returned, False otherwise>,
+    "response": <final response to the task>,
 }}"""
 
 
@@ -55,11 +56,6 @@ class TaskOutputGenerator:
         response_json = json.loads(response.content)
 
         final_response = response_json["response"]
-        information = response_json["information"]
-        if information:
-            formatted_response = f"{final_response}\n\n{information}"
-        else:
-            formatted_response = final_response
 
-        print(formatted_response)
-        return formatted_response
+        print(final_response)
+        return final_response
