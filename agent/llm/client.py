@@ -77,14 +77,15 @@ class LLMClient:
             kwargs = {}
             if json_format and not tools:
                 kwargs["response_format"] = {"type": "json_object"}
-            if model.startswith("gpt-4o"):
+            if model.startswith("gpt"):
                 kwargs["temperature"] = 0.0
             if model.startswith("o"):
                 kwargs["reasoning_effort"] = reasoning_effort
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "required"
-                kwargs["parallel_tool_calls"] = False
+                if model.startswith("gpt"):
+                    kwargs["parallel_tool_calls"] = False
 
             response = await client.with_options(
                 timeout=timeout
