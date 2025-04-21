@@ -24,8 +24,8 @@ Your primary responsibility is to evaluate the task completion by:
 Note: The person performing the task is able to extract textual information from the page without scrolling to it first. As a result, it's possible some information they gathered in the result response cannot be verified through the screenshots. 
 
 Rules:
-- If there's no evidence in the screenshots to verify the information in the result response, you should choose 'unclear'.
-- You should only choose 'failed' if you have explicit evidence that the task was not completed successfully.
+- IF THERE'S NO EVIDENCE IN THE SCREENSHOTS TO VERIFY THE INFORMATION IN THE RESULT RESPONSE, YOU SHOULD CHOOSE 'UNCLEAR'.
+- YOU SHOULD ONLY CHOOSE 'FAILED' IF YOU HAVE EXPLICIT EVIDENCE THAT THE TASK WAS NOT COMPLETED SUCCESSFULLY.
 
 
 Provide detailed feedback explaining:
