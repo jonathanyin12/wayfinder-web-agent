@@ -30,42 +30,18 @@ async def click_element(page: Page, element_id: str):
     """
     selector = f'[data-gwa-id="gwa-element-{element_id}"]'
 
-    try:
-        # First try to find and click the element in the main frame
-        if await page.locator(selector).count() > 0:
-            await page.hover(selector, timeout=10000)
-            await page.click(selector, timeout=10000)
+    # First try to find and click the element in the main frame
+    if await page.locator(selector).count() > 0:
+        await page.hover(selector, force=True)
+        await page.click(selector, force=True)
+        return
+
+    # If not found in main frame, look for it in all frames
+    for frame in page.frames:
+        if await frame.locator(selector).count() > 0:
+            await frame.hover(selector, force=True)
+            await frame.click(selector, force=True)
             return
 
-        # If not found in main frame, look for it in all frames
-        for frame in page.frames:
-            if await frame.locator(selector).count() > 0:
-                await frame.hover(selector, timeout=10000)
-                await frame.click(selector, timeout=10000)
-                return
-
-        # If we get here, element wasn't found in any frame
-        raise Exception(f"Element with selector {selector} not found in any frame")
-
-    except Exception as e:
-        # If normal click fails, try force click in all frames
-        print(f"Normal click failed, attempting force click: {str(e)}")
-
-        try:
-            # Try force click in main frame
-            if await page.locator(selector).count() > 0:
-                await page.click(selector, force=True)
-                return
-
-            # Try force click in all frames
-            for frame in page.frames:
-                if await frame.locator(selector).count() > 0:
-                    await frame.click(selector, force=True)
-                    return
-
-            raise Exception(
-                f"Element with selector {selector} not found in any frame for force click"
-            )
-        except Exception as force_error:
-            print(f"Force click also failed: {str(force_error)}")
-            raise
+    # If we get here, element wasn't found in any frame
+    raise Exception(f"Element with selector {selector} not found in any frame")
