@@ -164,10 +164,21 @@ class TaskExecutor:
                 self.screenshot_history.append(current_screenshot)
 
                 # Evaluate goal completion
+                if action_result:
+                    # Add the action result to the message history
+                    evaluation_message_history = [
+                        *self.message_history,
+                        ChatCompletionUserMessageParam(
+                            role="user",
+                            content=f"ACTION RESULT:\n{action_result}",
+                        ),
+                    ]
+                else:
+                    evaluation_message_history = self.message_history
+
                 completed, feedback = await self.goal_manager.evaluate_goal_completion(
-                    self.message_history,
+                    evaluation_message_history,
                     self.goal,
-                    action_result,
                     self.goal_screenshot_history,
                 )
 
@@ -271,10 +282,9 @@ class TaskExecutor:
             ) = await self.goal_manager.evaluate_goal_validity(
                 [
                     *self.message_history,
-                    self.llm_client.create_user_message_with_images(
-                        message_content,
-                        [current_screenshot],
-                        detail="high",
+                    ChatCompletionUserMessageParam(
+                        role="user",
+                        content=message_content,
                     ),
                 ],
                 self.goal,

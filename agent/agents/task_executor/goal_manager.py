@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Tuple, cast
+from typing import List, Tuple
 
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 
@@ -56,14 +56,11 @@ class GoalManager:
         self,
         message_history: List[ChatCompletionMessageParam],
         goal: str,
-        action_result: str,
         goal_screenshot_history: List[str],
     ) -> Tuple[bool, str]:
         """Evaluate if the current goal has been completed based on the action result."""
 
-        eval_prompt = await evaluate_goal_completion_prompt(
-            self.browser, goal, action_result
-        )
+        eval_prompt = await evaluate_goal_completion_prompt(self.browser, goal)
         user_message = self.llm_client.create_user_message_with_images(
             eval_prompt, goal_screenshot_history, detail="high"
         )
@@ -186,9 +183,7 @@ Rules:
 """
 
 
-async def evaluate_goal_completion_prompt(
-    browser: AgentBrowser, goal: str, action_result: str
-) -> str:
+async def evaluate_goal_completion_prompt(browser: AgentBrowser, goal: str) -> str:
     page = browser.current_page
     pixels_above, pixels_below = await page.get_pixels_above_below()
     page_position = get_formatted_page_position(pixels_above, pixels_below)
@@ -217,17 +212,18 @@ CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
 
 
 TASK: 
-1. Evaluate the outcome of the previous action. If something unintended happened, explain what went wrong and what should be done to correct it. 
-2. Evaluate if the goal has been completed and provide feedback on the goal's completion. If you are stuck on completing the goal, brainstorm alternative strategies to complete the goal.
+1. Evaluate the outcome of the previous action. 
+- If something unintended happened, explain what went wrong and what should be done to correct it. 
+- If the previous action was the "extract" action, you don't need to verify the truthfulness of the extracted text.
+
+2. Evaluate if the goal has been completed and provide feedback on the goal's completion. 
+- If the goal is not completed, explain why and what needs to be done to complete the goal. If the goal is completed, briefly summarize what was done to complete the goal. 
+- If you are stuck on completing the goal, brainstorm alternative strategies to complete the goal.
 
 Goal: {goal}
 
-{f"Previous action result:\n{action_result}" if action_result else ""}
 
 Use the screenshots to evaluate if the goal has been completed. They capture the state of the page through time in chronological order.
-
-If the goal is not completed, explain why and what needs to be done to complete the goal. If the goal is completed, briefly summarize what was done to complete the goal.
-
 
 Output your response in JSON format.
 {{
