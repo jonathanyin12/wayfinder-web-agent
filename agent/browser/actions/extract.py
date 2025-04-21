@@ -4,11 +4,9 @@ from playwright.async_api import Page
 from agent.browser.core.page import browser_action
 from agent.llm import LLMClient
 
-llm_client = LLMClient()
-
 
 @browser_action
-async def extract(page: Page, information_to_extract: str):
+async def extract(page: Page, llm_client: LLMClient, information_to_extract: str):
     page_content = await page.content()
     markdown_content = markdownify.markdownify(page_content)
 

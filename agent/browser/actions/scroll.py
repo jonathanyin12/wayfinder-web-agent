@@ -13,8 +13,6 @@ from playwright.async_api import Page
 from agent.browser.core.page import browser_action
 from agent.llm.client import LLMClient
 
-llm_client = LLMClient()
-
 
 async def scroll_down(page: Page, amount: float = 0.75):
     """
@@ -48,7 +46,9 @@ async def scroll_up(page: Page, amount: float = 0.75):
     )
 
 
-async def _find_content_on_page(content_to_find: str, crops: list[str]) -> dict:
+async def _find_content_on_page(
+    content_to_find: str, crops: list[str], llm_client: LLMClient
+) -> dict:
     """Find the content on the page using LLM and return the response."""
 
     prompt = f"""You are a helpful assistant tasked with finding content on a page. You can see the page via the screenshots. The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page. The screenshots are indexed from 0 to {len(crops) - 1}, with index 0 being the first screenshot and {len(crops) - 1} being the last screenshot. The screenshot index is also written in red in the bottom right corner of each screenshot.
@@ -97,7 +97,11 @@ Respond with a JSON object with the following fields:
 
 
 async def _get_vertical_position(
-    content_to_find: str, location: str, screenshot: str, use_location: bool = False
+    content_to_find: str,
+    location: str,
+    screenshot: str,
+    llm_client: LLMClient,
+    use_location: bool = False,
 ) -> float:
     """Get the vertical position of the content on the page"""
     if use_location:
@@ -137,7 +141,7 @@ Respond with a JSON object with the following field:
             "vertical position is -1, getting vertical position from location, which may be inaccurate"
         )
         vertical_position = await _get_vertical_position(
-            content_to_find, location, screenshot, use_location=True
+            content_to_find, location, screenshot, llm_client, use_location=True
         )
     return vertical_position
 
@@ -156,13 +160,14 @@ async def find(
     page: Page,
     content_to_find: str,
     full_page_screenshot_crops: List[str],
+    llm_client: LLMClient,
     page_height: int,
 ):
     """Scroll to the content on the page"""
     crops = label_screenshots(full_page_screenshot_crops)
     crop_height = 1600
 
-    find_result = await _find_content_on_page(content_to_find, crops)
+    find_result = await _find_content_on_page(content_to_find, crops, llm_client)
 
     found = find_result["found"]
     output = find_result["response"]
@@ -172,7 +177,7 @@ async def find(
     # If content was found, scroll to the appropriate position in the page
     if found and screenshot_index >= 0 and screenshot_index < len(crops):
         vertical_position = await _get_vertical_position(
-            content_to_find, location, crops[screenshot_index]
+            content_to_find, location, crops[screenshot_index], llm_client
         )
         scroll_position = max(
             0,

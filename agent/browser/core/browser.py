@@ -38,6 +38,7 @@ class AgentBrowser:
         initial_url: str,
         output_dir: str,
         headless: bool,
+        llm_client: LLMClient,
     ):
         """Initialize the browser controller."""
         # Playwright resources
@@ -48,7 +49,7 @@ class AgentBrowser:
         self.current_page_index = 0
         self.pages: List[AgentBrowserPage] = []
 
-        self.llm_client = LLMClient()
+        self.llm_client = llm_client
 
         self.output_dir = output_dir
         self.initial_url = initial_url

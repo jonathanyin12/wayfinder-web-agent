@@ -53,7 +53,7 @@ class TaskExecutor:
         browser: AgentBrowser,
         output_dir: str,
         model: str = "gpt-4.1",
-        max_iterations: int = 15,
+        max_iterations: int = 1,
     ):
         self.task = task
         self.llm_client = llm_client

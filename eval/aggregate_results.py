@@ -36,7 +36,7 @@ def load_task_data(data_file: str) -> Dict[str, Dict[str, Any]]:
 
 def analyze_results(
     results_dir: str,
-) -> Tuple[Dict[str, Dict[str, Any]], List[str], int, int]:
+) -> Tuple[Dict[str, Dict[str, Any]], List[str], int, int, float]:
     """Analyze evaluation results for all websites."""
     # List of websites to analyze
     webs = [
@@ -62,6 +62,7 @@ def analyze_results(
     successful_tasks = 0
     web_success_rates = {}
     all_failed_tasks = []
+    total_cost = 0
 
     # Analyze results for each website
     for web in webs:
@@ -82,6 +83,10 @@ def analyze_results(
 
                 with open(metadata_file) as fr:
                     metadata = json.load(fr)
+
+                # Extract token usage data if available
+                if "token_usage" in metadata:
+                    total_cost += metadata["token_usage"]["run_cost"]
 
                 auto_eval_res = metadata.get("auto_eval", {})
                 if auto_eval_res:
@@ -108,7 +113,13 @@ def analyze_results(
                 f"{web} Success Rate: {web_success_rate:.2f}% ({web_successful_tasks}/{web_total_tasks} tasks)"
             )
 
-    return web_success_rates, all_failed_tasks, successful_tasks, total_tasks
+    return (
+        web_success_rates,
+        all_failed_tasks,
+        successful_tasks,
+        total_tasks,
+        total_cost,
+    )
 
 
 def save_failed_tasks(
@@ -137,6 +148,7 @@ def save_results_summary(
     successful_tasks: int,
     total_tasks: int,
     all_failed_tasks: List[str],
+    total_cost: float,
 ) -> str:
     """Create and save a summary of the results to a text file."""
     success_rate = (successful_tasks / total_tasks * 100) if total_tasks > 0 else 0
@@ -161,6 +173,10 @@ def save_results_summary(
                 f"{web}: {stats['success_rate']:.2f}% ({stats['successful_tasks']}/{stats['total_tasks']} tasks)\n"
             )
 
+        f.write("\nTotal cost:\n")
+        f.write("-------------\n")
+        f.write(f"${total_cost:.6f}\n")
+
     return summary_path
 
 
@@ -173,7 +189,7 @@ def main() -> None:
     task_dict = load_task_data("eval/WebVoyager_data.jsonl")
 
     # Analyze results
-    web_success_rates, all_failed_tasks, successful_tasks, total_tasks = (
+    web_success_rates, all_failed_tasks, successful_tasks, total_tasks, total_cost = (
         analyze_results(args.results_dir)
     )
 
@@ -187,7 +203,6 @@ def main() -> None:
     # Save failed tasks details
     output_path = save_failed_tasks(args.results_dir, all_failed_tasks, task_dict)
     print(f"Saved {len(all_failed_tasks)} failed tasks to {output_path}")
-
     # Save results summary
     summary_path = save_results_summary(
         args.results_dir,
@@ -195,6 +210,7 @@ def main() -> None:
         successful_tasks,
         total_tasks,
         all_failed_tasks,
+        total_cost,
     )
     print(f"Saved results summary to {summary_path}")
 

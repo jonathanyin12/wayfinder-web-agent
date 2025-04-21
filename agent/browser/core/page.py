@@ -78,6 +78,14 @@ class AgentBrowserPage:
                         page_height=Image.open(
                             io.BytesIO(base64.b64decode(self.full_page_screenshot))
                         ).height,
+                        llm_client=self.llm_client,
+                        *args,
+                        **kwargs,
+                    )
+                elif name == "extract":
+                    return await action_func(
+                        page=self.page,
+                        llm_client=self.llm_client,
                         *args,
                         **kwargs,
                     )
@@ -108,7 +116,9 @@ class AgentBrowserPage:
             full_page_screenshot_crops = self.get_full_page_screenshot_crops()
             tasks.append(
                 asyncio.create_task(
-                    get_page_overview(self.page, full_page_screenshot_crops)
+                    get_page_overview(
+                        self.page, full_page_screenshot_crops, self.llm_client
+                    )
                 )
             )
 
@@ -117,6 +127,7 @@ class AgentBrowserPage:
                 preprocess_page(
                     self.page,
                     self.output_dir,
+                    self.llm_client,
                 )
             )
         )

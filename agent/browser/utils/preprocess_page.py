@@ -17,11 +17,9 @@ from agent.browser.utils.dom_utils.load_js_file import load_js_file
 from agent.browser.utils.screenshot import take_element_screenshot, take_screenshot
 from agent.llm.client import LLMClient
 
-llm_client = LLMClient()
-
 
 async def preprocess_page(
-    page: Page, output_dir: str
+    page: Page, output_dir: str, llm_client: LLMClient
 ) -> Tuple[str, str, Dict[int, Dict[str, str]]]:
     """
     Preprocess the page and return the screenshot, bounding box screenshot, and element descriptions.
@@ -48,7 +46,7 @@ async def preprocess_page(
     await clear_bounding_boxes(page)
     # start_time = time.time()
     # elements = await get_element_descriptions(
-    #     page, element_simplified_htmls, screenshot_base64, output_dir
+    #     page, element_simplified_htmls, screenshot_base64, output_dir, llm_client
     # )
     # end_time = time.time()
     # print(
@@ -225,7 +223,7 @@ async def clear_bounding_boxes(page: Page) -> None:
 
 
 async def get_element_descriptions(
-    page, element_simplified_htmls, screenshot_base64, output_dir
+    page, element_simplified_htmls, screenshot_base64, output_dir, llm_client
 ) -> Dict[int, Dict[str, str]]:
     """
     Get descriptions for all annotated elements on the page in parallel.
@@ -240,7 +238,7 @@ async def get_element_descriptions(
     semaphore = asyncio.Semaphore(20)
 
     async def get_element_description_with_semaphore(
-        page, element_id, simplified_html, screenshot_base64, output_dir
+        page, element_id, simplified_html, screenshot_base64, output_dir, llm_client
     ):
         async with semaphore:
             return await get_element_description(
@@ -249,6 +247,7 @@ async def get_element_descriptions(
                 simplified_html,
                 screenshot_base64,
                 output_dir,
+                llm_client,
             )
 
     for element_id, simplified_html in element_simplified_htmls.items():
@@ -259,6 +258,7 @@ async def get_element_descriptions(
             simplified_html,
             screenshot_base64,
             output_dir,
+            llm_client,
         )
         tasks.append((element_id, task))
 
@@ -282,6 +282,7 @@ async def get_element_description(
     simplified_html: str,
     screenshot_base64: str,
     output_dir: str,
+    llm_client: LLMClient,
 ) -> str:
     """
     Get a description for a single element on the page.
@@ -356,7 +357,7 @@ Output your response in JSON format:
 
 
 async def get_page_overview(
-    page: Page, full_page_screenshot_crops: List[str]
+    page: Page, full_page_screenshot_crops: List[str], llm_client: LLMClient
 ) -> Tuple[str, str]:
     """
     Get a brief overview of the page.
