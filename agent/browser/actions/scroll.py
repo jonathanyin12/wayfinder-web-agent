@@ -5,6 +5,7 @@ Scroll actions for navigating up and down a page.
 import base64
 import io
 import json
+from typing import List
 
 from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import Page
@@ -151,12 +152,16 @@ async def scroll(page: Page, direction: str, amount: float = 0.75):
 
 
 @browser_action
-async def find(page: Page, content_to_find: str, full_page_screenshot: str):
+async def find(
+    page: Page,
+    content_to_find: str,
+    full_page_screenshot_crops: List[str],
+    page_height: int,
+):
     """Scroll to the content on the page"""
-    image_data = base64.b64decode(full_page_screenshot)
-    image = Image.open(io.BytesIO(image_data))
+    crops = label_screenshots(full_page_screenshot_crops)
     crop_height = 1600
-    crops = get_screenshot_crops_with_labels(image, crop_height)
+
     find_result = await _find_content_on_page(content_to_find, crops)
 
     found = find_result["found"]
@@ -173,7 +178,7 @@ async def find(page: Page, content_to_find: str, full_page_screenshot: str):
             0,
             min(
                 (screenshot_index + vertical_position - 0.5) * crop_height,
-                image.height - 1600,
+                page_height - 1600,
             ),
         )
 
@@ -203,37 +208,27 @@ async def find(page: Page, content_to_find: str, full_page_screenshot: str):
     return output
 
 
-def get_screenshot_crops_with_labels(
-    image: Image.Image,
-    crop_height: int,
+def label_screenshots(
+    crops: List[str],
 ) -> list[str]:
     """
-    Get a list of crops of the image with labeled indices in the bottom right corner
+    Label a list of base64-encoded image crops with indices in the bottom right corner
 
     Args:
-        image: The PIL Image to crop
-        crop_height: Height of each crop in pixels
+        crops: List of base64-encoded PNG images to label
 
     Returns:
         List of base64-encoded PNG images with index labels
     """
-    # Get dimensions
-    width, height = image.size
+    labeled_crops = []
 
-    # Calculate number of crops needed
-    num_crops = (height + crop_height - 1) // crop_height  # Ceiling division
-
-    # Create crops
-    crops = []
-    for i in range(num_crops):
-        top = i * crop_height
-        bottom = min(top + crop_height, height)
-
-        # Crop the image
-        crop = image.crop((0, top, width, bottom))
+    for i, crop_base64 in enumerate(crops):
+        # Decode base64 to image
+        image_data = base64.b64decode(crop_base64)
+        image = Image.open(io.BytesIO(image_data))
 
         # Add label to the crop
-        draw = ImageDraw.Draw(crop)
+        draw = ImageDraw.Draw(image)
         font_size = 100
         try:
             font = ImageFont.truetype("Arial.ttf", font_size)
@@ -244,7 +239,7 @@ def get_screenshot_crops_with_labels(
             )
             font = None
         draw.text(
-            (crop.width - 100 * len(str(i)), crop.height - 125),
+            (image.width - 100 * len(str(i)), image.height - 125),
             str(i),
             fill="red",
             font=font,
@@ -252,10 +247,10 @@ def get_screenshot_crops_with_labels(
             stroke_fill="white",
         )
 
-        # Convert to base64
+        # Convert back to base64
         buffered = io.BytesIO()
-        crop.save(buffered, format="PNG")
-        crop_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        crops.append(crop_base64)
+        image.save(buffered, format="PNG")
+        labeled_crop_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        labeled_crops.append(labeled_crop_base64)
 
-    return crops
+    return labeled_crops

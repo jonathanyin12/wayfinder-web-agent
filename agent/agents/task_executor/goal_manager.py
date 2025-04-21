@@ -24,8 +24,13 @@ class GoalManager:
         """Determines the next goal based on the current state and history."""
         next_goal_prompt = await get_next_goal_prompt(self.browser)
 
+        full_page_screenshot_crops = (
+            self.browser.current_page.get_full_page_screenshot_crops()
+        )
         user_message = self.llm_client.create_user_message_with_images(
-            next_goal_prompt, [self.browser.current_page.screenshot], detail="high"
+            next_goal_prompt,
+            full_page_screenshot_crops,
+            detail="high",
         )
 
         response = await self.llm_client.make_call(
@@ -151,6 +156,10 @@ PAGE DETAILS:
 
 CURRENTLY VISIBLE INTERACTABLE ELEMENTS:
 {interactable_elements}
+
+
+SCREENSHOTS:
+The screenshots are ordered from top to bottom; the first screenshot is the top of the page and the last screenshot is the bottom of the page.
 
 
 TASK: 

@@ -355,38 +355,13 @@ Output your response in JSON format:
     return output
 
 
-async def get_page_overview(page: Page, full_page_screenshot: str) -> Tuple[str, str]:
+async def get_page_overview(
+    page: Page, full_page_screenshot_crops: List[str]
+) -> Tuple[str, str]:
     """
     Get a brief overview of the page.
     """
     # Convert base64 screenshot to PIL Image
-    image_data = base64.b64decode(full_page_screenshot)
-    image = Image.open(io.BytesIO(image_data))
-
-    # Get dimensions
-    width, height = image.size
-
-    # Define the crop height
-    crop_height = 1600
-
-    # Calculate number of crops needed
-    num_crops = (height + crop_height - 1) // crop_height  # Ceiling division
-
-    num_crops = min(num_crops, 10)
-    # Create crops
-    crops = []
-    for i in range(num_crops):
-        top = i * crop_height
-        bottom = min(top + crop_height, height)
-
-        # Crop the image
-        crop = image.crop((0, top, width, bottom))
-
-        # Convert back to base64
-        buffered = io.BytesIO()
-        crop.save(buffered, format="PNG")
-        crop_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        crops.append(crop_base64)
 
     page_title = await page.title()
 
@@ -407,7 +382,9 @@ Output your response in JSON format.
     "detailed_breakdown": <Answer to task 2 in markdown format>,
 }}"""
 
-    user_message = llm_client.create_user_message_with_images(prompt, crops, "high")
+    user_message = llm_client.create_user_message_with_images(
+        prompt, full_page_screenshot_crops, "high"
+    )
     response = await llm_client.make_call(
         [user_message], "gpt-4.1-mini", json_format=True
     )
