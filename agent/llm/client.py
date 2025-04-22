@@ -64,7 +64,7 @@ class LLMClient:
         model: str,
         tools: Optional[List[Dict[str, Any]]] = None,
         attempt: int = 0,
-        timeout: int = 60,
+        timeout: int = 120,
         json_format: bool = True,
         reasoning_effort: Optional[Literal["low", "medium", "high"]] = "high",
     ) -> ChatCompletionMessage:

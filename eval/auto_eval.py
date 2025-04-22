@@ -143,6 +143,8 @@ async def auto_eval(process_dir, openai_client, model, img_num):
                 * MODEL_PRICING[model]["completion_tokens"]
             )
             print("Cost:", cost)
+            if openai_response.choices[0].message.content is None:
+                raise Exception("No response from LLM")
             break
         except Exception as e:
             print(e)
@@ -190,6 +192,19 @@ async def main():
             api_version="2025-01-01-preview",
             azure_endpoint="https://jonathan-research.openai.azure.com",
         )
+
+    tasks = []
+    with open("eval/WebVoyager_data.jsonl", "r") as f:
+        for line in f:
+            tasks.append(json.loads(line))
+
+    with open("eval/WebVoyagerImpossibleTasks.json", "r") as f:
+        impossible_tasks_json = json.load(f)
+        impossible_tasks = set()
+        for web_name in impossible_tasks_json:
+            for task_id in impossible_tasks_json[web_name]:
+                impossible_tasks.add(task_id)
+
     webs = [
         "Allrecipes",
         "Amazon",
@@ -222,26 +237,29 @@ async def main():
     all_tasks = []
     # Collect all tasks that need to be run across all websites
     print("Collecting tasks...")
-    for web in webs:
-        for idx in range(0, 46):
-            file_dir = os.path.join(args.output_dir, web + "--" + str(idx))
-            metadata_file = os.path.join(file_dir, "metadata.json")
-            if os.path.exists(metadata_file):
-                try:
-                    with open(metadata_file) as fr:
-                        metadata = json.load(fr)
-                    # Skip if the auto evaluation result is already in the metadata
-                    # if "auto_eval" not in metadata:
+    for task in tasks:
+        web = task["web"]
+        task_id = task["id"]
+        if task_id in impossible_tasks:
+            continue
+        file_dir = os.path.join(args.output_dir, task_id)
+        metadata_file = os.path.join(file_dir, "metadata.json")
+        if os.path.exists(metadata_file):
+            try:
+                with open(metadata_file) as fr:
+                    metadata = json.load(fr)
+                # Skip if the auto evaluation result is already in the metadata
+                if "auto_eval" not in metadata:
                     task = process_task(
                         file_dir, client, args.model, args.max_attached_imgs
                     )
                     all_tasks.append({"task": task, "file_dir": file_dir, "web": web})
-                except json.JSONDecodeError:
-                    print(
-                        f"Warning: Could not decode JSON from {metadata_file}. Skipping."
-                    )
-                except Exception as e:
-                    print(f"Warning: Error processing {file_dir}: {e}. Skipping.")
+            except json.JSONDecodeError:
+                print(f"Warning: Could not decode JSON from {metadata_file}. Skipping.")
+            except Exception as e:
+                print(f"Warning: Error processing {file_dir}: {e}. Skipping.")
+        else:
+            print(f"Skipping {file_dir} because metadata file does not exist.")
 
     results_by_web = defaultdict(list)
     costs_by_web = defaultdict(float)

@@ -24,7 +24,7 @@ async def run_task(task: TaskData, output_dir: str) -> None:
     # check if the task has already been run
     if os.path.exists(f"{output_dir}/{task['id']}"):
         if os.path.exists(f"{output_dir}/{task['id']}/metadata.json"):
-            print(f"Task {task['id']} already exists, skipping")
+            print(f"Task {task['id']} already completed, skipping")
             return
         else:
             print(
@@ -61,10 +61,6 @@ async def main(max_concurrent_tasks: int, output_dir: str) -> None:
 
     tasks = [task for task in tasks if task["id"] not in impossible_tasks]
 
-    # randomize the order of tasks
-    random.seed(42)
-    random.shuffle(tasks)
-    tasks = tasks[:50]
     print(f"Running {len(tasks)} tasks")
 
     async def run_task_with_semaphore(
