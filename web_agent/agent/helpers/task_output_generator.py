@@ -6,7 +6,7 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 
-from agent.llm import LLMClient
+from web_agent.llm import LLMClient
 
 
 def get_task_output_prompt(task: str) -> str:

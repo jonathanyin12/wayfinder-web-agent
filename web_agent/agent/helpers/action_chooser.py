@@ -3,15 +3,15 @@ from typing import List
 
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 
-from agent.agents.utils.prompt_formatting import (
+from web_agent.agent.utils.prompt_formatting import (
     get_formatted_interactable_elements,
     get_formatted_page_position,
     get_formatted_tabs,
 )
-from agent.browser import AgentBrowser
-from agent.browser.core.tools import TOOLS
-from agent.llm import LLMClient
-from agent.models import AgentAction
+from web_agent.browser import AgentBrowser
+from web_agent.browser.core.tools import TOOLS
+from web_agent.llm import LLMClient
+from web_agent.models import AgentAction
 
 
 async def get_action_choice_prompt(browser: AgentBrowser, goal: str) -> str:

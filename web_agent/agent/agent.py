@@ -1,7 +1,6 @@
-import json
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import List, Tuple
 
 from openai.types.chat.chat_completion_assistant_message_param import (
     ChatCompletionAssistantMessageParam,
@@ -14,14 +13,13 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 
-from agent.models import AgentAction
-
-from ...browser import AgentBrowser
-from ...llm import LLMClient
-from .action_chooser import ActionChooser
-from .goal_manager import GoalManager
-from .task_evaluator import TaskEvaluator
-from .task_output_generator import TaskOutputGenerator
+from web_agent.agent.helpers.action_chooser import ActionChooser
+from web_agent.agent.helpers.goal_manager import GoalManager
+from web_agent.agent.helpers.task_evaluator import TaskEvaluator
+from web_agent.agent.helpers.task_output_generator import TaskOutputGenerator
+from web_agent.browser import AgentBrowser
+from web_agent.llm import LLMClient
+from web_agent.models import AgentAction
 
 # Define a type alias for the return type of the run method
 RunReturnType = Tuple[
@@ -47,7 +45,7 @@ Here are the possible actions you can take:
 It is currently {datetime.now().strftime("%Y-%m-%d")}"""
 
 
-class TaskExecutor:
+class Agent:
     def __init__(
         self,
         task: str,

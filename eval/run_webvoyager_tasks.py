@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import List, TypedDict
 
 sys.path.append(".")
-from agent.web_agent import WebAgent
+from web_agent.web_agent import WebAgent
 
 
 class TaskData(TypedDict):

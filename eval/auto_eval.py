@@ -53,7 +53,9 @@ Note: The person performing the task is able to extract textual information from
 
 Rules:
 - IF THERE'S NO EVIDENCE IN THE SCREENSHOTS TO VERIFY THE INFORMATION IN THE RESULT RESPONSE, YOU SHOULD CHOOSE 'UNCLEAR'.
-- YOU SHOULD ONLY CHOOSE 'FAILED' IF YOU HAVE EXPLICIT EVIDENCE THAT THE TASK WAS NOT COMPLETED SUCCESSFULLY.
+- IF YOU HAVE EXPLICIT EVIDENCE THAT THE TASK WAS NOT COMPLETED SUCCESSFULLY, YOU SHOULD CHOOSE 'FAILED'
+- IF THE PERSON PERFORMING THE TASK CHALLENGES THE FEASIBILITY OF THE TASK, YOU SHOULD CHOOSE 'FAILED'
+- IF THE PERSON PERFORMING THE TASK SAID THEY DID NOT COMPLETE THE TASK, YOU SHOULD CHOOSE 'FAILED'
 
 
 Provide detailed feedback explaining:
@@ -205,23 +207,6 @@ async def main():
             for task_id in impossible_tasks_json[web_name]:
                 impossible_tasks.add(task_id)
 
-    webs = [
-        "Allrecipes",
-        "Amazon",
-        "Apple",
-        "ArXiv",
-        "BBC News",
-        "Booking",
-        "Cambridge Dictionary",
-        "Coursera",
-        "ESPN",
-        "GitHub",
-        "Google Flights",
-        "Google Map",
-        "Google Search",
-        "Huggingface",
-        "Wolfram Alpha",
-    ]
     total_cost = 0  # Initialize total cost tracker
     # Create a semaphore to limit concurrent requests
     semaphore = asyncio.Semaphore(20)
@@ -283,6 +268,23 @@ async def main():
 
     # Print results per website
     print("\n--- Evaluation Results ---")
+    webs = [
+        "Allrecipes",
+        "Amazon",
+        "Apple",
+        "ArXiv",
+        "BBC News",
+        "Booking",
+        "Cambridge Dictionary",
+        "Coursera",
+        "ESPN",
+        "GitHub",
+        "Google Flights",
+        "Google Map",
+        "Google Search",
+        "Huggingface",
+        "Wolfram Alpha",
+    ]
     for web in webs:
         if web in results_by_web:
             print(f"\n{web} results:")

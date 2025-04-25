@@ -16,9 +16,9 @@ from playwright.async_api import (
     async_playwright,
 )
 
-from agent.browser.core.page import AgentBrowserPage
-from agent.llm.client import LLMClient
-from agent.models import AgentAction
+from web_agent.browser.core.page import AgentBrowserPage
+from web_agent.llm.client import LLMClient
+from web_agent.models import AgentAction
 
 # Set up logging
 logger = logging.getLogger(__name__)

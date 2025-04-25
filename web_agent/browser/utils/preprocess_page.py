@@ -13,9 +13,9 @@ from typing import Dict, List, Optional, Tuple
 from PIL import Image, ImageDraw
 from playwright.async_api import Page
 
-from agent.browser.utils.dom_utils.load_js_file import load_js_file
-from agent.browser.utils.screenshot import take_element_screenshot, take_screenshot
-from agent.llm.client import LLMClient
+from web_agent.browser.utils.dom_utils.load_js_file import load_js_file
+from web_agent.browser.utils.screenshot import take_element_screenshot, take_screenshot
+from web_agent.llm.client import LLMClient
 
 
 async def preprocess_page(

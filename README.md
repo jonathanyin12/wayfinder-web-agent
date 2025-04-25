@@ -1,4 +1,4 @@
-# Generative Web Agents
+# Wayfinder: A Multimodal Browsing Agent for Real-World Web Tasks
 
 ## Setup
 

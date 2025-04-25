@@ -2,9 +2,9 @@ import json
 import os
 from datetime import datetime
 
-from agent.agents.task_executor.task_executor import TaskExecutor
-from agent.browser.core.browser import AgentBrowser
-from agent.llm import LLMClient
+from web_agent.agent.agent import Agent
+from web_agent.browser.core.browser import AgentBrowser
+from web_agent.llm import LLMClient
 
 
 class WebAgent:
@@ -30,7 +30,7 @@ class WebAgent:
     async def run(self):
         await self.browser.launch()
         model = "gpt-4.1"
-        task_executor = TaskExecutor(
+        agent = Agent(
             task=self.objective,
             llm_client=self.llm_client,
             browser=self.browser,
@@ -44,7 +44,7 @@ class WebAgent:
             url_history,
             iterations,
             execution_time,
-        ) = await task_executor.run()
+        ) = await agent.run()
         print(result)
         self.save_run(
             result, message_history, url_history, model, iterations, execution_time

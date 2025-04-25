@@ -1,7 +1,7 @@
 import json
 from typing import List
 
-from agent.models import BrowserTab
+from web_agent.models import BrowserTab
 
 
 def get_formatted_interactable_elements(pixels_above, pixels_below, elements) -> str:

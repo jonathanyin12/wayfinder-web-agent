@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 from PIL import Image
 from playwright.async_api import Page
 
-from agent.browser.utils.preprocess_page import get_page_overview, preprocess_page
-from agent.browser.utils.screenshot import take_screenshot
-from agent.llm.client import LLMClient
+from web_agent.browser.utils.preprocess_page import get_page_overview, preprocess_page
+from web_agent.browser.utils.screenshot import take_screenshot
+from web_agent.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
 

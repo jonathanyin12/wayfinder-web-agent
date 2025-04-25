@@ -10,8 +10,8 @@ from typing import List
 from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import Page
 
-from agent.browser.core.page import browser_action
-from agent.llm.client import LLMClient
+from web_agent.browser.core.page import browser_action
+from web_agent.llm.client import LLMClient
 
 
 async def scroll_down(page: Page, amount: float = 0.75):
