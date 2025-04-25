@@ -3,3 +3,4 @@ playwright
 python-dotenv
 markdownify
 pillow
+camoufox[geoip]
