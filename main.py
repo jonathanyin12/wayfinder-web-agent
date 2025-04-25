@@ -1,6 +1,6 @@
 import asyncio
 
-from agent import WebAgent
+from web_agent import WebAgent
 
 
 async def main():
