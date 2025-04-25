@@ -9,9 +9,10 @@
 
   const elements = Array.from(
     document.querySelectorAll(
-      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='option'], [role='menuitem'], [role='tab'], [role='link'], [role='menuitemradio']"
+      "a, button, input, textarea, select, [role='button'], [role='combobox'], [role='option'], [role='menuitem'], [role='tab'], [role='link'], [role='menuitemradio'], [href]"
     )
   );
+
   let element_simplified_htmls = {}; // HTML for each element index
 
   function isHiddenByAncestors(element) {
