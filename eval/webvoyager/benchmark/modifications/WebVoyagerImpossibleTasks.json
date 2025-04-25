@@ -34,9 +34,9 @@
         "Coursera--17": "'Credit Eligible' filter does not exist",
         "Coursera--28": "No such course exists"
     },
-    "Github": {
-        "Github--20": "Github Copilot chat has already been released on mobile",
-        "Github--22": "No such repository exists currently"
+    "GitHub": {
+        "GitHub--20": "Github Copilot chat has already been released on mobile",
+        "GitHub--22": "No such repository exists currently"
     },
     "Google Flights": {
         "Google Flights--0": "Requires making an actual booking",

@@ -173,7 +173,9 @@ cython_debug/
 
 
 runs/
-eval/webvoyager/
+eval/webvoyager/webvoyager_runs/
+eval/webvoyager/runs/
+figures/
 .vscode/
 scrolling_tests/
 .DS_Store
