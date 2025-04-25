@@ -4,7 +4,7 @@ Input actions for interacting with form fields and text inputs.
 
 from playwright.async_api import Page
 
-from agent.browser.core.page import browser_action
+from web_agent.browser.core.page import browser_action
 
 
 @browser_action

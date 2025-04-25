@@ -1,4 +1,4 @@
-# Generative Web Agents
+# Wayfinder: A Multimodal Browsing Agent for Real-World Web Tasks
 
 ## Setup
 
@@ -19,4 +19,11 @@ OPENAI_API_KEY=your_openai_api_key
 
 ```bash
 python3 main.py
+```
+
+## WebVoyager Benchmark
+
+```
+cd eval/webvoyager
+python3 run_webvoyager_benchmark.py --output-dir <output_dir>
 ```

@@ -3,26 +3,15 @@ import json
 import os
 import statistics
 import sys
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
-
-def parse_arguments() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Aggregate WebVoyager evaluation results"
-    )
-    parser.add_argument(
-        "results_dir",
-        type=str,
-        help="Directory containing evaluation results (e.g., 'webvoyager/20250420_171609')",
-    )
-
-    return parser.parse_args()
+from utils import TaskData
 
 
-def load_task_data(data_file: str) -> Dict[str, Dict[str, Any]]:
+def load_task_data(data_file: str) -> Dict[str, TaskData]:
     """Load WebVoyager task data from JSONL file."""
-    all_tasks = []
+    all_tasks: List[TaskData] = []
     try:
         with open(data_file, "r") as f:
             for line in f:
@@ -36,27 +25,14 @@ def load_task_data(data_file: str) -> Dict[str, Dict[str, Any]]:
 
 
 def analyze_results(
+    task_dict: Dict[str, TaskData],
     results_dir: str,
 ) -> Tuple[Dict[str, Dict[str, Any]], List[str], List[str], List[str], int, int, float]:
     """Analyze evaluation results for all websites."""
-    # List of websites to analyze
-    webs = [
-        "Allrecipes",
-        "Amazon",
-        "Apple",
-        "ArXiv",
-        "BBC News",
-        "Booking",
-        "Cambridge Dictionary",
-        "Coursera",
-        "ESPN",
-        "GitHub",
-        "Google Flights",
-        "Google Map",
-        "Google Search",
-        "Huggingface",
-        "Wolfram Alpha",
-    ]
+
+    web_to_tasks = defaultdict(list)
+    for task_data in task_dict.values():
+        web_to_tasks[task_data["web_name"]].append(task_data)
 
     # Initialize counters and lists
     total_tasks = 0
@@ -68,7 +44,7 @@ def analyze_results(
     total_cost = 0
 
     # Analyze results for each website
-    for web in webs:
+    for web, tasks in web_to_tasks.items():
         web_total_tasks = 0
         web_successful_tasks = 0
         successful_file_dirs = []
@@ -76,16 +52,15 @@ def analyze_results(
         unclear_file_dirs = []
         web_iterations = []  # List to store iteration counts for this website
         # Check each possible task ID
-        for idx in range(0, 46):
-            task_id = f"{web}--{idx}"
-            file_dir = os.path.join(results_dir, task_id)
-            metadata_file = os.path.join(file_dir, "metadata.json")
-
-            if os.path.exists(metadata_file):
+        for task_data in tasks:
+            task_dir = task_data["id"]
+            task_id = task_data["id"]
+            metadata_path = os.path.join(results_dir, task_dir, "metadata.json")
+            if os.path.exists(metadata_path):
                 web_total_tasks += 1
                 total_tasks += 1
 
-                with open(metadata_file) as fr:
+                with open(metadata_path) as fr:
                     metadata = json.load(fr)
 
                 # Extract token usage data if available
@@ -101,15 +76,15 @@ def analyze_results(
                     if verdict == "success":
                         web_successful_tasks += 1
                         successful_tasks_count += 1
-                        successful_file_dirs.append(file_dir)
+                        successful_file_dirs.append(task_dir)
                         all_successful_tasks.append(
                             task_id
                         )  # Track successful task IDs
                     elif verdict == "failed":
-                        failed_file_dirs.append(file_dir)
+                        failed_file_dirs.append(task_dir)
                         all_failed_tasks.append(task_id)
                     else:  # Includes 'unknown' or any other verdict
-                        unclear_file_dirs.append(file_dir)
+                        unclear_file_dirs.append(task_dir)
                         all_unclear_tasks.append(task_id)  # Track unclear task IDs
 
         # Calculate iteration statistics for this website
@@ -160,7 +135,7 @@ def analyze_results(
 def save_tasks_by_status(
     results_dir: str,
     task_ids: List[str],
-    task_dict: Dict[str, Dict[str, Any]],
+    task_dict: Dict[str, TaskData],
     output_filename: str,
 ) -> str:
     """Save details of tasks with a specific status to a JSONL file."""
@@ -230,12 +205,11 @@ def save_results_summary(
     return summary_path
 
 
-def main() -> None:
+def aggregate_results(results_dir: str) -> None:
     """Main function to aggregate and analyze WebVoyager evaluation results."""
-    args = parse_arguments()
-
+    results_dir = f"runs/{results_dir}"
     # Load WebVoyager data to get task details
-    task_dict = load_task_data("eval/WebVoyager_data.jsonl")
+    task_dict = load_task_data("benchmark/WebVoyager_cleaned_tasks.jsonl")
 
     # Analyze results
     (
@@ -246,7 +220,7 @@ def main() -> None:
         successful_tasks_count,
         total_tasks,
         total_cost,
-    ) = analyze_results(args.results_dir)
+    ) = analyze_results(task_dict, results_dir)
 
     # Calculate and display the overall success rate and counts
     success_rate = (
@@ -261,23 +235,23 @@ def main() -> None:
 
     # Save tasks details by status
     successful_path = save_tasks_by_status(
-        args.results_dir, all_successful_tasks, task_dict, "successful_tasks.jsonl"
+        results_dir, all_successful_tasks, task_dict, "successful_tasks.jsonl"
     )
     print(f"Saved {len(all_successful_tasks)} successful tasks to {successful_path}")
 
     failed_path = save_tasks_by_status(
-        args.results_dir, all_failed_tasks, task_dict, "failed_tasks.jsonl"
+        results_dir, all_failed_tasks, task_dict, "failed_tasks.jsonl"
     )
     print(f"Saved {len(all_failed_tasks)} failed tasks to {failed_path}")
 
     unclear_path = save_tasks_by_status(
-        args.results_dir, all_unclear_tasks, task_dict, "unclear_tasks.jsonl"
+        results_dir, all_unclear_tasks, task_dict, "unclear_tasks.jsonl"
     )
     print(f"Saved {len(all_unclear_tasks)} unclear tasks to {unclear_path}")
 
     # Save results summary
     summary_path = save_results_summary(
-        args.results_dir,
+        results_dir,
         web_success_rates,
         successful_tasks_count,
         total_tasks,
@@ -290,4 +264,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Aggregate WebVoyager evaluation results"
+    )
+    parser.add_argument(
+        "results_dir",
+        type=str,
+        help="Directory containing evaluation results (e.g., 'webvoyager/20250420_171609')",
+    )
+
+    args = parser.parse_args()
+    aggregate_results(args.results_dir)

@@ -5,7 +5,7 @@ from openai.types.chat.chat_completion_system_message_param import (
     ChatCompletionSystemMessageParam,
 )
 
-from agent.llm import LLMClient
+from web_agent.llm import LLMClient
 
 SYSTEM_PROMPT = """As an evaluator, you will be presented with three primary components to assist you in your role:
 
