@@ -6,14 +6,14 @@ page navigation, and interaction with web elements through various actions.
 """
 
 import logging
-from typing import List, Optional
+import sys
+from typing import List, Optional, cast
 
+from camoufox.async_api import AsyncCamoufox
 from playwright.async_api import (
     Browser,
     BrowserContext,
     Page,
-    Playwright,
-    async_playwright,
 )
 
 from web_agent.browser.core.page import AgentBrowserPage
@@ -41,8 +41,11 @@ class AgentBrowser:
         llm_client: LLMClient,
     ):
         """Initialize the browser controller."""
-        # Playwright resources
-        self.playwright: Optional[Playwright] = None
+        # Camoufox instance manages Playwright and browser launch options
+        self.camoufox = AsyncCamoufox(
+            headless=headless,
+            window=(1200, 1600),
+        )
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
 
@@ -53,7 +56,9 @@ class AgentBrowser:
 
         self.output_dir = output_dir
         self.initial_url = initial_url
-        self.headless = headless
+        self.headless = (
+            headless  # Keep for potential other uses, though Camoufox handles it now
+        )
 
     # Browser lifecycle methods
     # ------------------------------------------------------------------------
@@ -61,39 +66,26 @@ class AgentBrowser:
     async def launch(self) -> None:
         """
         Launch the browser and navigate to the initial URL.
-
-        Args:
-            url: The initial URL to navigate to
-            headless: Whether to run the browser in headless mode
-
-        Returns:
-            A tuple containing the browser context and page
         """
-        self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=self.headless,
-            args=[
-                "--window-position=0,0",
-            ],
-        )
+        # Use Camoufox context manager entry to launch browser
+        self.browser = cast(Browser, await self.camoufox.__aenter__())
 
-        # Set up a realistic user agent
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        self.context = await self.browser.new_context(
-            user_agent=user_agent,
-            viewport={"width": 1200, "height": 1600},
-        )
+        # Ensure browser is launched before creating context
+        if not self.browser:
+            raise RuntimeError("Camoufox failed to launch the browser.")
+
+        self.context = await self.browser.new_context()
 
         await self.create_new_page(self.initial_url)
 
         self.context.on("page", self.handle_new_page_event)
 
     async def terminate(self):
-        """Close browser and playwright resources."""
-        if self.browser:
-            await self.browser.close()
-        if self.playwright:
-            await self.playwright.stop()
+        """Close browser and playwright resources using Camoufox context exit."""
+        # Use Camoufox context manager exit to close browser and stop Playwright
+        await self.camoufox.__aexit__(*sys.exc_info())
+        self.browser = None  # Ensure state reflects closure
+        self.context = None
 
     async def create_new_page(self, url: str):
         """Create a new page in the browser."""
