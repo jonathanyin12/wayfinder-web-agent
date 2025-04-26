@@ -12,9 +12,9 @@ from typing import List
 sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../..")
-from web_agent.web_agent import WebAgent
+from utils import TaskData
 
-from .utils import TaskData
+from web_agent.web_agent import WebAgent
 
 
 async def run_task_with_semaphore(
@@ -25,6 +25,7 @@ async def run_task_with_semaphore(
     async with semaphore:
         # Add random delay before starting the task so that the tasks are staggered
         await asyncio.sleep(random.uniform(0, 10))
+        print(f"Running task {task['id']}")
         agent = WebAgent(
             objective=task["ques"],
             initial_url=task["web"],
@@ -38,11 +39,14 @@ async def main(max_concurrent_tasks: int, output_dir: str) -> None:
     semaphore = asyncio.Semaphore(max_concurrent_tasks)
 
     output_dir = f"runs/{output_dir}"
-
     all_tasks: List[TaskData] = []
     with open("benchmark/WebVoyager_cleaned_tasks.jsonl", "r") as f:
         for line in f:
             all_tasks.append(json.loads(line))
+
+    random.seed(42)
+    random.shuffle(all_tasks)
+    all_tasks = all_tasks[:100]
 
     # Skip tasks that have already been run
     tasks = []
