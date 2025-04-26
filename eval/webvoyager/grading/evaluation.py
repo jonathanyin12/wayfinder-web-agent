@@ -1,6 +1,5 @@
 import asyncio
 import json
-from typing import Any, Tuple
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
@@ -9,27 +8,31 @@ from ..utils.llm_interface import (
     call_llm,
     prepare_initial_evaluation_messages,
     prepare_reevaluation_prompt,
-    process_llm_response,
+    process_llm_response_into_evaluation,
 )
-from ..utils.types import EvaluationResult, Metadata, ReEvaluationResult
+from ..utils.types import EvaluationResult, Metadata
 
 
-async def evaluate_task_initial(
+async def evaluate_task(
     semaphore: asyncio.Semaphore,
     process_dir: str,
     openai_client: AsyncOpenAI | AsyncAzureOpenAI,
     model: str,
     img_num: int,
-) -> Tuple[str, str | None, float, Metadata | None]:
+) -> None:
     """Evaluates a single task using screenshots and response.
 
+    Updates metadata with EvaluationResult containing the initial evaluation.
+
     Returns:
-        Tuple containing: (verdict, explanation, cost, updated_metadata or None on error)
+        Tuple containing: (verdict or None on error, updated_metadata or None on error)
     """
     async with semaphore:
         print(
             f"--------------------- Initial Eval: {process_dir} ---------------------"
         )
+        verdict = None
+        metadata = None
         try:
             metadata = load_task_metadata(process_dir)
             messages = prepare_initial_evaluation_messages(
@@ -38,114 +41,84 @@ async def evaluate_task_initial(
             response_content, cost = await call_llm(
                 openai_client, model, messages=messages, json_mode=True
             )
-            evaluation_data = process_llm_response(response_content, cost, model)
+            # Process response into an Evaluation structure
+            evaluation = process_llm_response_into_evaluation(
+                response_content, cost, model
+            )
 
-            # Ensure the response conforms to EvaluationResult structure (basic check)
-            if "verdict" not in evaluation_data or "explanation" not in evaluation_data:
-                raise ValueError(
-                    "LLM response missing required fields 'verdict' or 'explanation'."
+            verdict = evaluation["verdict"]
+            print(f"Verdict: {verdict}")
+            print(f"Explanation: {evaluation['explanation']}")
+
+            # Start building the evaluation result
+            evaluation_result: EvaluationResult = {
+                "evaluation": evaluation,
+                "re_evaluation": None,  # Default to None
+                "final_verdict": verdict,  # Start with initial verdict
+            }
+
+            # If initial verdict is unclear, trigger re-evaluation
+            # evaluate_unclear_task updates evaluation_result in-place
+            if verdict == "unclear":
+                await evaluate_unclear_task(
+                    process_dir=process_dir,
+                    metadata=metadata,
+                    openai_client=openai_client,
+                    model=model,
                 )
 
-            # Cast to the specific type (assuming validation passes)
-            evaluation_result: EvaluationResult = evaluation_data  # type: ignore
-
-            verdict = evaluation_result["verdict"]
-            explanation = evaluation_result["explanation"]
-            print(f"Initial Verdict: {verdict}")
-            print(f"Explanation: {explanation}")
-
-            # Save evaluation result to metadata
-            metadata["auto_eval"] = evaluation_result
+            # Save the potentially updated evaluation_result to metadata
+            metadata["evaluation_result"] = evaluation_result
             save_task_metadata(process_dir, metadata)
-
-            return verdict, explanation, cost, metadata
 
         except FileNotFoundError:
             print(f"Metadata file not found in {process_dir}. Skipping initial eval.")
-            return "error", f"Metadata file not found: {process_dir}", 0.0, None
         except json.JSONDecodeError:
             print(
                 f"Invalid JSON in metadata file for {process_dir}. Skipping initial eval."
             )
-            return "error", f"Invalid JSON in metadata: {process_dir}", 0.0, None
         except Exception as e:
             print(
                 f"An unexpected error occurred during initial eval for {process_dir}: {e}"
             )
-            return "error", f"Unexpected error: {e}", 0.0, None
 
 
 async def evaluate_unclear_task(
-    semaphore: asyncio.Semaphore,
-    task_id: str,
+    process_dir: str,
     metadata: Metadata,
     openai_client: AsyncOpenAI | AsyncAzureOpenAI,
-    model: str = "o4-mini",  # Default model for re-evaluation
-) -> Tuple[bool, str, Metadata]:
+    model: str,
+) -> None:
     """Re-evaluates a task previously marked as 'unclear'.
 
+    Updates the 're_evaluation' and 'final_verdict' fields in metadata['evaluation_result'] in-place.
+
     Returns:
-        Tuple containing: (success_bool, explanation, updated_metadata)
+        The final verdict string ("success" or "failed").
     """
-    async with semaphore:
-        print(
-            f"--------------------- Re-evaluating Unclear Task: {task_id} ---------------------"
+    print(f"--------------------- Re-evaluating: {process_dir} ---------------------")
+    evaluation_result = metadata["evaluation_result"]
+    if evaluation_result is None:
+        raise ValueError(
+            f"Evaluation result not found in metadata for task in {process_dir}"
+        )
+    try:
+        prompt = prepare_reevaluation_prompt(metadata)
+        response_content, cost = await call_llm(
+            openai_client, model, prompt=prompt, json_mode=True
+        )
+        # Process response into an Evaluation structure
+        re_evaluation = process_llm_response_into_evaluation(
+            response_content, cost, model
         )
 
-        try:
-            prompt = prepare_reevaluation_prompt(metadata)
-            response_content, cost = await call_llm(
-                openai_client, model, prompt=prompt, json_mode=True
-            )
-            # Note: Cost from re-evaluation is currently not stored, but could be added.
-            response_json = process_llm_response(response_content, cost, model)
+        # Update metadata with the re-evaluation and final verdict in-place
+        evaluation_result["re_evaluation"] = re_evaluation
 
-            # Ensure the response conforms to ReEvaluationResult structure (basic check)
-            if "verdict" not in response_json or "explanation" not in response_json:
-                raise ValueError(
-                    "LLM re-evaluation response missing required fields 'verdict' or 'explanation'."
-                )
+        evaluation_result["final_verdict"] = re_evaluation["verdict"]
 
-            # Cast to the specific type
-            reeval_result: ReEvaluationResult = response_json  # type: ignore
-
-            verdict = reeval_result["verdict"].lower()
-            explanation = reeval_result["explanation"]
-            success = verdict == "success"
-
-            if not success:
-                print(f"Re-evaluation Verdict: Failed")
-                print(f"  Task: {task_id}")
-                print(f"  Final response: {metadata.get('final_response')}")
-                # Handle potential None for auto_eval
-                original_eval = metadata.get("auto_eval")
-                original_explanation = (
-                    original_eval.get("explanation") if original_eval else "N/A"
-                )
-                print(f"  Original Evaluator's Evaluation: {original_explanation}")
-                print(f"  Re-evaluation Explanation: {explanation}")
-            else:
-                print(f"Re-evaluation Verdict: Success")
-
-            # Update metadata with the re-evaluation verdict and reasoning
-            metadata["verdict_after_additional_verification"] = (
-                "success" if success else "failed"
-            )
-            metadata["additional_verification_reasoning"] = explanation
-
-            # Save the updated metadata (assuming process_dir can be derived or is passed)
-            # This requires knowing the results directory structure.
-            # For now, returning the updated metadata to be saved by the caller.
-            # process_dir = os.path.join(results_base_dir, task_id) # Example
-            # save_task_metadata(process_dir, metadata)
-
-            return success, explanation, metadata
-
-        except Exception as e:
-            print(f"Error verifying unclear task {task_id}: {e}")
-            # Update metadata to reflect the error during re-evaluation
-            metadata["verdict_after_additional_verification"] = "error"
-            metadata["additional_verification_reasoning"] = (
-                f"Error during re-evaluation: {e}"
-            )
-            return False, f"Error during re-evaluation: {e}", metadata
+    except Exception as e:
+        print(
+            f"An unexpected error occurred during re-evaluation for {process_dir}: {e}"
+        )
+        raise e

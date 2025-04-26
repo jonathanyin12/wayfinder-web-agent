@@ -38,7 +38,6 @@ def get_extract_message_outputs(message_history):
             is_extract_output = True
             continue
         if is_extract_output:
-            # TODO: This assert might be too strict, maybe relax?
             assert message["role"] == "user"
             extract_outputs.append(message["message"])
             is_extract_output = False

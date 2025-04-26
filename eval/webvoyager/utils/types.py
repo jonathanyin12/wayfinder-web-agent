@@ -8,32 +8,28 @@ class TaskData(TypedDict):
     web: str
 
 
-class EvaluationResult(TypedDict):
+class Evaluation(TypedDict):
     verdict: str  # success | failed | unclear
     explanation: str
-    eval_cost: float
-    eval_model: str
+    cost: float
+    model: str
 
 
-class ReEvaluationResult(TypedDict):
-    verdict: str  # success | failed
-    explanation: str
+class EvaluationResult(TypedDict):
+    final_verdict: str  # success | failed | unclear
+    evaluation: Evaluation
+    re_evaluation: Evaluation | None
 
 
 class Metadata(TypedDict):
     objective: str
-    final_response: str | dict
-    id: str
-    web_name: str
-    ques: str
-    web: str
-    screenshot_path: str
-    result_path: str
-    duration: float
-    message_history: str
-    run_cost: float
-    model: str
+    initial_url: str
     iterations: int
-    auto_eval: EvaluationResult | None  # Updated by auto_eval
-    verdict_after_additional_verification: str | None  # Updated by eval_unclear
-    additional_verification_reasoning: str | None  # Updated by eval_unclear
+    final_response: str
+    url_history: list[str]
+    execution_time: float
+    token_usage: dict
+    run_cost: float
+    primary_model: str
+    message_history: str
+    evaluation_result: EvaluationResult | None

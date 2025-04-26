@@ -14,7 +14,7 @@ from .constants import (
 )
 from .file_io import encode_image
 from .parsing import get_extract_message_outputs
-from .types import Metadata
+from .types import Evaluation, Metadata
 
 
 def initialize_client(model: str) -> AsyncOpenAI | AsyncAzureOpenAI:
@@ -57,7 +57,7 @@ def prepare_initial_evaluation_messages(
             print(f"Warning: Error encoding image {png_file}: {e}")
 
     user_prompt_tmp = INITIAL_EVALUATION_USER_PROMPT_TEMPLATE.replace(
-        "<task>", metadata["ques"]
+        "<task>", metadata["objective"]
     )
     # Ensure final_response is a string
     final_response_str = (
@@ -82,14 +82,17 @@ def prepare_initial_evaluation_messages(
 
 def prepare_reevaluation_prompt(metadata: Metadata) -> str:
     """Prepares the prompt string for the re-evaluation LLM call."""
-    # Handle case where auto_eval might be None
-    auto_eval_data = metadata.get("auto_eval")
-    eval_reasoning = (
-        auto_eval_data.get("explanation", "N/A") if auto_eval_data else "N/A"
-    )
+
+    # Access initial evaluation data from the new structure
+    evaluation_result_data = metadata.get("evaluation_result")
+    assert evaluation_result_data is not None
+    assert evaluation_result_data.get("evaluation") is not None
+    initial_eval_data = evaluation_result_data.get("evaluation")
+    eval_reasoning = initial_eval_data.get("explanation")
+
     message_history = metadata.get("message_history", "")
     final_response = metadata.get("final_response", "N/A")
-    ques = metadata.get("ques", "N/A")
+    objective = metadata.get("objective", "N/A")
 
     # Ensure final_response is a string
     final_response_str = (
@@ -104,7 +107,7 @@ def prepare_reevaluation_prompt(metadata: Metadata) -> str:
     )
 
     prompt = REEVALUATION_PROMPT_TEMPLATE.format(
-        objective=ques,
+        objective=objective,
         final_response=final_response_str,
         eval_reasoning=eval_reasoning,
         formatted_extract_outputs=formatted_extract_outputs,
@@ -214,23 +217,21 @@ async def call_llm(
     raise Exception("LLM call failed after multiple retries")
 
 
-def process_llm_response(
+def process_llm_response_into_evaluation(
     response_content: str, cost: float, model: str
-) -> Dict[str, Any]:
+) -> Evaluation:
     """Parses the LLM response JSON and adds cost/model info."""
     try:
         response = json.loads(response_content)
-        response["eval_cost"] = cost
-        response["eval_model"] = model
-        # TODO: Add validation against EvaluationResult/ReEvaluationResult types
-        return response
+        if "verdict" not in response or "explanation" not in response:
+            raise ValueError(
+                "LLM response missing required fields 'verdict' or 'explanation'."
+            )
+        response["cost"] = cost
+        response["model"] = model
+        evaluation: Evaluation = response
+        return evaluation
     except json.JSONDecodeError as e:
         print(f"Error decoding LLM JSON response: {e}")
         print(f"Raw response: {response_content}")
-        # Return a default failure structure or raise
-        return {
-            "verdict": "error",
-            "explanation": "Failed to parse LLM JSON response",
-            "eval_cost": cost,
-            "eval_model": model,
-        }
+        raise ValueError("Failed to parse LLM JSON response")
