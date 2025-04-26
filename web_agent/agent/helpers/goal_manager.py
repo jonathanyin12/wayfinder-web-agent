@@ -163,6 +163,8 @@ TASK:
 1. Describe the current state of the task. Outline what has been done so far and what remains to be done. If any mistakes were made and backtracking is needed, explain what went wrong and what needs to be done to correct it.
 2. Determine what the immediate next goal should be. This typically should be a single action to take. The goal must be possible to complete on the current page. 
 
+If you are stuck, assess the state of the page, brainstorm alternative strategies to proceed, and then determine the next goal. Don't repeatedly try the same thing if it's not working.
+
 If the task is fully complete, suggest submitting for evaluation.
 
 

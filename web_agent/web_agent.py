@@ -13,10 +13,12 @@ class WebAgent:
         objective: str,
         initial_url: str = "about:blank",
         output_dir: str = "",
+        max_iterations: int = 30,
         headless: bool = False,
+        model: str = "gpt-4.1",
     ):
         self.objective = objective
-
+        self.model = model
         self.output_dir = (
             output_dir or f"runs/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
@@ -26,16 +28,17 @@ class WebAgent:
         self.browser = AgentBrowser(
             initial_url, self.output_dir, headless, self.llm_client
         )
+        self.max_iterations = max_iterations
 
     async def run(self):
         await self.browser.launch()
-        model = "gpt-4.1"
         agent = Agent(
             task=self.objective,
             llm_client=self.llm_client,
             browser=self.browser,
             output_dir=self.output_dir,
-            model=model,
+            model=self.model,
+            max_iterations=self.max_iterations,
         )
         (
             result,
@@ -46,9 +49,7 @@ class WebAgent:
             execution_time,
         ) = await agent.run()
         print(result)
-        self.save_run(
-            result, message_history, url_history, model, iterations, execution_time
-        )
+        self.save_run(result, message_history, url_history, iterations, execution_time)
 
         await self.browser.terminate()
 
@@ -57,7 +58,6 @@ class WebAgent:
         final_response,
         message_history,
         url_history,
-        model,
         iterations,
         execution_time,
     ):
@@ -77,7 +77,7 @@ class WebAgent:
                     "execution_time": execution_time,
                     "token_usage": token_usage,
                     "run_cost": total_cost,
-                    "primary_model": model,
+                    "primary_model": self.model,
                     "message_history": prettified_message_history,
                 },
                 f,
