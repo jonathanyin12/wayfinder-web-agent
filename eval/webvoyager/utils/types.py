@@ -5,7 +5,6 @@ class TaskData(TypedDict):
     web_name: str
     id: str
     ques: str  # Original objective field in the dataset
-    objective: str  # Added field for clarity, usually the same as ques
     web: str
 
 

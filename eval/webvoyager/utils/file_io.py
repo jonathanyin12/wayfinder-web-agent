@@ -33,10 +33,8 @@ def load_task_definitions(file_path: str) -> List[TaskData]:
     tasks = []
     with open(file_path, "r") as f:
         for line in f:
-            # Add objective field for consistency if it's missing
+            # Load task data directly
             task_data = json.loads(line)
-            if "objective" not in task_data:
-                task_data["objective"] = task_data.get("ques", "")
             tasks.append(task_data)
     return tasks
 

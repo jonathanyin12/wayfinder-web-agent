@@ -57,7 +57,7 @@ def prepare_initial_evaluation_messages(
             print(f"Warning: Error encoding image {png_file}: {e}")
 
     user_prompt_tmp = INITIAL_EVALUATION_USER_PROMPT_TEMPLATE.replace(
-        "<task>", metadata["objective"]
+        "<task>", metadata["ques"]
     )
     # Ensure final_response is a string
     final_response_str = (
@@ -89,7 +89,7 @@ def prepare_reevaluation_prompt(metadata: Metadata) -> str:
     )
     message_history = metadata.get("message_history", "")
     final_response = metadata.get("final_response", "N/A")
-    objective = metadata.get("objective", "N/A")
+    ques = metadata.get("ques", "N/A")
 
     # Ensure final_response is a string
     final_response_str = (
@@ -104,7 +104,7 @@ def prepare_reevaluation_prompt(metadata: Metadata) -> str:
     )
 
     prompt = REEVALUATION_PROMPT_TEMPLATE.format(
-        objective=objective,
+        objective=ques,
         final_response=final_response_str,
         eval_reasoning=eval_reasoning,
         formatted_extract_outputs=formatted_extract_outputs,
