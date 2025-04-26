@@ -4,15 +4,14 @@ import json
 import os
 from typing import Any, List
 
+from grading.aggregation import (
+    run_aggregation,  # Assuming run_aggregation is the main entry point
+)
+from grading.evaluation import evaluate_task
 from tqdm.asyncio import tqdm_asyncio
 from utils.file_io import load_task_definitions, load_task_metadata
 from utils.llm_interface import initialize_client
 from utils.types import TaskData
-
-from eval.webvoyager.grading.aggregation import (
-    run_aggregation,  # Assuming run_aggregation is the main entry point
-)
-from eval.webvoyager.grading.evaluation import evaluate_task
 
 DEFAULT_TASK_DEFINITIONS = "benchmark/WebVoyager_cleaned_tasks.jsonl"
 DEFAULT_CONCURRENCY = 20

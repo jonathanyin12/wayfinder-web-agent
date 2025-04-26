@@ -5,8 +5,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ..utils.file_io import load_task_dict, save_tasks_to_jsonl
-from ..utils.types import EvaluationResult, Metadata, TaskData
+from utils.file_io import load_task_dict, save_tasks_to_jsonl
+from utils.types import EvaluationResult, Metadata, TaskData
 
 
 @dataclass

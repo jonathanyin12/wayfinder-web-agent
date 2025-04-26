@@ -2,15 +2,14 @@ import asyncio
 import json
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI
-
-from ..utils.file_io import load_task_metadata, save_task_metadata
-from ..utils.llm_interface import (
+from utils.file_io import load_task_metadata, save_task_metadata
+from utils.llm_interface import (
     call_llm,
     prepare_initial_evaluation_messages,
     prepare_reevaluation_prompt,
     process_llm_response_into_evaluation,
 )
-from ..utils.types import EvaluationResult, Metadata
+from utils.types import EvaluationResult, Metadata
 
 
 async def evaluate_task(
