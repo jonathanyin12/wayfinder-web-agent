@@ -62,10 +62,10 @@ def _process_single_task(task_id: str, results_dir: str) -> ProcessedTaskInfo:
             re_eval = evaluation_result.get("re_evaluation")
             if initial_eval:
                 # Assuming Evaluation is compatible with Dict[str, Any]
-                current_total_eval_cost += initial_eval.get("eval_cost", 0.0)
+                current_total_eval_cost += initial_eval.get("cost", 0.0)
             if re_eval:
                 # Assuming Evaluation is compatible with Dict[str, Any]
-                current_total_eval_cost += re_eval.get("eval_cost", 0.0)
+                current_total_eval_cost += re_eval.get("cost", 0.0)
 
             # Determine final verdict
             result.final_verdict = evaluation_result.get("final_verdict", "error")
@@ -220,6 +220,11 @@ def analyze_results(
                 task_id in task_ids_processed
             ):  # Avoid double counting if task_dict has duplicates
                 continue
+
+            # Check if the task directory exists
+            if not os.path.exists(os.path.join(results_dir, task_id)):
+                continue
+
             task_ids_processed.add(task_id)
 
             result = _process_single_task(task_id, results_dir)
@@ -454,8 +459,9 @@ def run_aggregation(results_dir_name: str, task_definitions_path: str) -> None:
     # ------------------------------------
 
     # Save tasks details by FINAL status
-    successful_path = save_tasks_to_jsonl(
-        os.path.join(results_abs_path, "final_successful_tasks.jsonl"),
+    successful_path = os.path.join(results_abs_path, "final_successful_tasks.jsonl")
+    save_tasks_to_jsonl(
+        successful_path,
         final_successful_ids,
         task_dict,
     )
@@ -463,23 +469,28 @@ def run_aggregation(results_dir_name: str, task_definitions_path: str) -> None:
         f"Saved {len(final_successful_ids)} final successful tasks to {successful_path}"
     )
 
-    failed_path = save_tasks_to_jsonl(
-        os.path.join(results_abs_path, "final_failed_tasks.jsonl"),
+    failed_path = os.path.join(results_abs_path, "final_failed_tasks.jsonl")
+    save_tasks_to_jsonl(
+        failed_path,
         final_failed_ids,
         task_dict,
     )
     print(f"Saved {len(final_failed_ids)} final failed tasks to {failed_path}")
 
-    error_path = save_tasks_to_jsonl(
-        os.path.join(results_abs_path, "final_error_tasks.jsonl"),
+    error_path = os.path.join(results_abs_path, "final_error_tasks.jsonl")
+    save_tasks_to_jsonl(
+        error_path,
         final_error_ids,
         task_dict,
     )
     print(f"Saved {len(final_error_ids)} final error tasks to {error_path}")
 
     # --- Save initially unclear tasks ---
-    initially_unclear_path = save_tasks_to_jsonl(
-        os.path.join(results_abs_path, "initial_unclear_tasks.jsonl"),
+    initially_unclear_path = os.path.join(
+        results_abs_path, "initial_unclear_tasks.jsonl"
+    )
+    save_tasks_to_jsonl(
+        initially_unclear_path,
         all_initially_unclear_ids,
         task_dict,
     )

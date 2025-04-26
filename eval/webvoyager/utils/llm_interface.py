@@ -153,11 +153,7 @@ async def call_llm(
 
             if model.startswith("gpt"):
                 kwargs["temperature"] = 0.0
-            if (
-                model.startswith("o")
-                or model.startswith("o4")
-                or model.startswith("o3")
-            ):
+            if model.startswith("o"):
                 kwargs["reasoning_effort"] = "high"
 
             print(f"Calling LLM {model}... (Attempt {attempt + 1}/{max_retries})")

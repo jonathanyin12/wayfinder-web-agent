@@ -41,10 +41,13 @@ async def run_evaluations(
     for task_data in tasks:
         task_id = task_data["id"]
         file_dir = os.path.join(results_dir, task_id)
+        # Check if the task directory exists
+        if not os.path.exists(file_dir):
+            continue
         metadata_path = os.path.join(file_dir, "metadata.json")
 
         if not os.path.exists(metadata_path):
-            print(f"Skipping {file_dir}: metadata file does not exist.")
+            print(f"Skipping {task_id}: metadata file does not exist.")
             continue
 
         try:

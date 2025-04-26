@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 from utils.file_io import load_task_metadata, save_task_metadata
@@ -28,7 +29,7 @@ async def evaluate_task(
     """
     async with semaphore:
         print(
-            f"--------------------- Initial Eval: {process_dir} ---------------------"
+            f"--------------------- Eval: {os.path.basename(process_dir)} ---------------------"
         )
         verdict = None
         metadata = None
@@ -55,9 +56,11 @@ async def evaluate_task(
                 "re_evaluation": None,  # Default to None
                 "final_verdict": verdict,  # Start with initial verdict
             }
+            # Assign to metadata BEFORE potential re-evaluation
+            metadata["evaluation_result"] = evaluation_result
 
             # If initial verdict is unclear, trigger re-evaluation
-            # evaluate_unclear_task updates evaluation_result in-place
+            # evaluate_unclear_task updates evaluation_result in-place via metadata
             if verdict == "unclear":
                 await evaluate_unclear_task(
                     process_dir=process_dir,
@@ -67,7 +70,6 @@ async def evaluate_task(
                 )
 
             # Save the potentially updated evaluation_result to metadata
-            metadata["evaluation_result"] = evaluation_result
             save_task_metadata(process_dir, metadata)
 
         except FileNotFoundError:
@@ -95,7 +97,9 @@ async def evaluate_unclear_task(
     Returns:
         The final verdict string ("success" or "failed").
     """
-    print(f"--------------------- Re-evaluating: {process_dir} ---------------------")
+    print(
+        f"--------------------- Re-evaluating: {os.path.basename(process_dir)} ---------------------"
+    )
     evaluation_result = metadata["evaluation_result"]
     if evaluation_result is None:
         raise ValueError(
