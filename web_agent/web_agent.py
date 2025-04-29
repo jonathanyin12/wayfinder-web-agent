@@ -13,7 +13,7 @@ class WebAgent:
         objective: str,
         initial_url: str = "about:blank",
         output_dir: str = "",
-        max_iterations: int = 30,
+        max_iterations: int = 20,
         headless: bool = False,
         model: str = "gpt-4.1",
     ):

@@ -179,6 +179,8 @@ def analyze_results(
     int,
     int,
     List[str],
+    Optional[float],
+    Optional[float],
 ]:
     """Analyze evaluation results stored in metadata files.
 
@@ -194,6 +196,7 @@ def analyze_results(
     all_failed_ids: List[str] = []
     all_error_ids: List[str] = []  # Tasks ending in error state
     all_initially_unclear_ids: List[str] = []  # Added: Tasks initially unclear
+    all_iterations: List[int] = []  # Added: Collect all iterations
 
     # Track costs separately
     total_run_cost = 0.0
@@ -247,6 +250,7 @@ def analyze_results(
 
                 if result.iterations is not None:
                     web_iterations.append(result.iterations)
+                    all_iterations.append(result.iterations)  # Added: Collect iteration
 
                 # --- Categorize Task Based on Final Verdict ---
                 if result.final_verdict == "success":
@@ -295,6 +299,11 @@ def analyze_results(
             all_error_ids=all_error_ids,  # Pass the master list of errors
         )
 
+    # Calculate overall iteration stats
+    overall_avg_iterations, overall_std_dev_iterations = _calculate_stats(
+        all_iterations
+    )  # Added
+
     # final_successful_count removed
     # Ensure uniqueness just in case (though should be unique due to task_ids_processed set)
     all_successful_ids = list(set(all_successful_ids))
@@ -321,6 +330,8 @@ def analyze_results(
         unclear_initially_now_success,  # Add new counts to return
         unclear_initially_now_failed,  # Add new counts to return
         all_initially_unclear_ids,  # Added
+        overall_avg_iterations,  # Added
+        overall_std_dev_iterations,  # Added
     )
 
 
@@ -335,6 +346,8 @@ def save_results_summary(
     total_eval_cost: float,
     unclear_initially_now_success: int,
     unclear_initially_now_failed: int,
+    overall_avg_iterations: Optional[float],
+    overall_std_dev_iterations: Optional[float],
 ) -> str:
     """Create and save a summary of the results to a text file."""
     # Derive successful count from the passed list
@@ -358,6 +371,19 @@ def save_results_summary(
         )  # Use derived count
         f.write(f"Total failed tasks (final): {len(failed_task_ids)}\n")
         f.write(f"Total tasks with errors: {len(error_task_ids)}\n")
+
+        # --- Add overall iteration stats ---
+        if (
+            overall_avg_iterations is not None
+            and overall_std_dev_iterations is not None
+        ):
+            f.write(
+                f"Overall Avg Iterations: {overall_avg_iterations:.2f} (± {overall_std_dev_iterations:.2f})\n"
+            )
+        else:
+            f.write("Overall Avg Iterations: N/A (no iteration data found)\n")
+        f.write("\n")  # Added newline
+        # ------------------------------------
 
         # --- Add unclear transition counts ---
         f.write(
@@ -429,6 +455,8 @@ def run_aggregation(results_dir_name: str, task_definitions_path: str) -> None:
         unclear_initially_now_success,
         unclear_initially_now_failed,
         all_initially_unclear_ids,
+        overall_avg_iterations,
+        overall_std_dev_iterations,
     ) = analyze_results(task_dict, results_abs_path)
 
     total_processed_tasks = (
@@ -457,6 +485,18 @@ def run_aggregation(results_dir_name: str, task_definitions_path: str) -> None:
         f"  (Tasks initially 'unclear' resolved to 'failed': {unclear_initially_now_failed})"
     )
     # ------------------------------------
+
+    # --- Print overall iteration stats ---
+    if overall_avg_iterations is not None and overall_std_dev_iterations is not None:
+        print(
+            f"Overall Avg Iterations: {overall_avg_iterations:.2f} (± {overall_std_dev_iterations:.2f})"
+        )
+    else:
+        print("Overall Avg Iterations: N/A")
+    print(f"Total Run Cost: ${total_run_cost:.6f}")  # Added print for cost
+    print(f"Total Eval Cost: ${total_eval_cost:.6f}")  # Added print for cost
+    print("-" * 30)  # Added separator
+    # -----------------------------------
 
     # Save tasks details by FINAL status
     successful_path = os.path.join(results_abs_path, "final_successful_tasks.jsonl")
@@ -511,5 +551,7 @@ def run_aggregation(results_dir_name: str, task_definitions_path: str) -> None:
         total_eval_cost,
         unclear_initially_now_success,
         unclear_initially_now_failed,
+        overall_avg_iterations,
+        overall_std_dev_iterations,
     )
     print(f"Saved results summary to {summary_path}")

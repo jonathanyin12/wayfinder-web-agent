@@ -60,7 +60,7 @@ class Agent:
         self.browser = browser
         self.output_dir = output_dir
 
-        self.max_iterations = min(max_iterations, 20)
+        self.max_iterations = max_iterations
         self.model = model
         self.message_history: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(

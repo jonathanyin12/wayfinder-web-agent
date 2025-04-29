@@ -12,7 +12,7 @@ from typing import List
 sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../..")
-from utils import TaskData
+from utils.types import TaskData
 
 from web_agent.web_agent import WebAgent
 
@@ -43,10 +43,6 @@ async def main(max_concurrent_tasks: int, output_dir: str) -> None:
     with open("benchmark/WebVoyager_cleaned_tasks.jsonl", "r") as f:
         for line in f:
             all_tasks.append(json.loads(line))
-
-    random.seed(42)
-    random.shuffle(all_tasks)
-    all_tasks = all_tasks[:100]
 
     # Skip tasks that have already been run
     tasks = []

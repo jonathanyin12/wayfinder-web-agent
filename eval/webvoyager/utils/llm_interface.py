@@ -20,11 +20,12 @@ from .types import Evaluation, Metadata
 def initialize_client(model: str) -> AsyncOpenAI | AsyncAzureOpenAI:
     """Initializes the appropriate OpenAI client based on the model name."""
     if model == "o4-mini":
-        return AsyncOpenAI()
+        return AsyncOpenAI(timeout=30)
     else:
         return AsyncAzureOpenAI(
             api_version="2025-01-01-preview",
             azure_endpoint="https://jonathan-research.openai.azure.com",
+            timeout=30,
         )
 
 
